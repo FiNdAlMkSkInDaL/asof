@@ -152,6 +152,7 @@ def parse_gamma(raw: dict[str, Any], token_id: str | None = None) -> WarehouseRo
 
 class MarketSource(Protocol):
     def primary_token(self) -> str: ...
+    def available_snapshots(self) -> frozenset[str]: ...
     def fetch_live(self, token_id: str, *, captured_clock: bool = False) -> LiveBook | None: ...
     def fetch_warehouse(self, token_id: str, snapshot: str) -> WarehouseRow | None: ...
 
@@ -170,6 +171,9 @@ class CassetteSource:
 
     def primary_token(self) -> str:
         return str(self._live_raw["asset_id"])
+
+    def available_snapshots(self) -> frozenset[str]:
+        return frozenset({"open", "closed"})
 
     def fetch_live(self, token_id: str, *, captured_clock: bool = False) -> LiveBook | None:
         if token_id != str(self._live_raw.get("asset_id")):
@@ -210,6 +214,9 @@ class LiveSource:
 
     def primary_token(self) -> str:
         return self._token
+
+    def available_snapshots(self) -> frozenset[str]:
+        return frozenset({"open"})
 
     def fetch_live(self, token_id: str, *, captured_clock: bool = False) -> LiveBook | None:
         r = self.client.get(f"{CLOB_URL}/book", params={"token_id": token_id})

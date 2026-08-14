@@ -10,4 +10,4 @@ Screen recording. No polish. Repo open, terminal visible.
 | 1:50–2:40 | Same token, cycle 2. Planner asked for the closed snapshot because cycle 1 was a live book win. APPLY: `R-BOOK-DEAD`, `best_bid` HOLD **0.169** (not empty). `closed` WAREHOUSE. One sentence: closed overlay is labelled; not a different market. |
 | 2:40–3:00 | `python -m asof explain <token>.best_bid` then `python -m asof explain <token>.closed`. Rule ids on screen. Stop. |
 
-Do not explain `.mid`. Do not demo `--live` unless that morning’s CLOB returns 200 for the token.
+Do not explain `.mid`. Do not run `--live` in the recording. If you already did, run `python -m asof demo` again so `artifacts/demo-run.txt` matches this shot list.

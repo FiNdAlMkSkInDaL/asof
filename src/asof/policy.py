@@ -152,9 +152,9 @@ def reconcile(
     )
     result.decisions.append(
         _decision(
-            "liquidity", live.top_liquidity, warehouse.liquidity, Winner.WAREHOUSE,
+            "liquidity", None, warehouse.liquidity, Winner.WAREHOUSE,
             warehouse.liquidity, "R-AGG-WAREHOUSE",
-            "Catalogue liquidity wins. Top-of-book size is logged as live, not stored as truth.",
+            "Catalogue liquidity wins. Top-of-book size is not a like-for-like live value.",
             as_of,
         )
     )
@@ -185,7 +185,7 @@ def _comparable_fields(live: LiveBook, warehouse: WarehouseRow) -> list[tuple[st
         ("spread", live.spread, None),
         ("last_trade_price", live.last_trade_price, warehouse.last_trade_price),
         ("volume", None, warehouse.volume),
-        ("liquidity", live.top_liquidity, warehouse.liquidity),
+        ("liquidity", None, warehouse.liquidity),
         ("closed", None, warehouse.closed),
         ("accepting_orders", None, warehouse.accepting_orders),
     ]
@@ -313,7 +313,7 @@ def _last_trade(
         return _decision(
             "last_trade_price", live_px, wh_px, Winner.LIVE, live_px,
             "R-TRADE-NEWER",
-            "Warehouse has no trade time. Fresh live last trade wins.",
+            "No trade timestamps on either side. Fresh live last-trade price wins; this is not a recency comparison.",
             as_of,
         )
     return _decision(

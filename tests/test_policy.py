@@ -11,6 +11,9 @@ OTHER = "tok-no"
 COND = "0xcond"
 
 
+_AUTO = object()
+
+
 def book(
     *,
     token_id: str = TOKEN,
@@ -19,10 +22,12 @@ def book(
     best_bid: float | None = 0.44,
     best_ask: float | None = 0.46,
     last_trade_price: float | None = 0.45,
-    last_trade_time: datetime | None = None,
+    last_trade_time: datetime | None | object = _AUTO,
     quoting: bool = True,
     top_liquidity: float | None = 200.0,
 ) -> LiveBook:
+    if last_trade_time is _AUTO:
+        last_trade_time = NOW - timedelta(seconds=1)
     return LiveBook(
         token_id=token_id,
         condition_id=condition_id,
@@ -30,7 +35,7 @@ def book(
         best_bid=best_bid,
         best_ask=best_ask,
         last_trade_price=last_trade_price,
-        last_trade_time=last_trade_time if last_trade_time is not None else NOW - timedelta(seconds=1),
+        last_trade_time=last_trade_time,  # type: ignore[arg-type]
         quoting=quoting,
         top_liquidity=top_liquidity,
     )
@@ -49,8 +54,10 @@ def warehouse(
     best_bid: float | None = 0.40,
     best_ask: float | None = 0.52,
     last_trade_price: float | None = 0.49,
-    last_trade_time: datetime | None = None,
+    last_trade_time: datetime | None | object = _AUTO,
 ) -> WarehouseRow:
+    if last_trade_time is _AUTO:
+        last_trade_time = NOW - timedelta(seconds=30)
     return WarehouseRow(
         token_id=token_id,
         condition_id=condition_id,
@@ -63,7 +70,7 @@ def warehouse(
         best_ask=best_ask,
         outcome_price=outcome_price,
         last_trade_price=last_trade_price,
-        last_trade_time=last_trade_time if last_trade_time is not None else NOW - timedelta(seconds=30),
+        last_trade_time=last_trade_time,  # type: ignore[arg-type]
     )
 
 
@@ -142,6 +149,15 @@ def test_r_trade_newer_live_timestamp():
     assert d.rule_id == "R-TRADE-NEWER"
 
 
+def test_r_trade_newer_no_clocks_fresh_live():
+    live = book(last_trade_time=None)
+    wh = warehouse(last_trade_time=None)
+    d = reconcile(live, wh, NOW).by_field("last_trade_price")
+    assert d.winner is Winner.LIVE
+    assert d.rule_id == "R-TRADE-NEWER"
+    assert "not a recency comparison" in d.reason
+
+
 def test_r_trade_newer_warehouse_timestamp():
     live = book(last_trade_price=0.41, last_trade_time=NOW - timedelta(seconds=40))
     wh = warehouse(last_trade_price=0.49, last_trade_time=NOW - timedelta(seconds=1))
@@ -158,7 +174,8 @@ def test_r_agg_warehouse():
     assert vol.winner is Winner.WAREHOUSE and vol.value == 9_001.0
     assert vol.rule_id == "R-AGG-WAREHOUSE"
     assert liq.winner is Winner.WAREHOUSE and liq.value == 8_002.0
-    assert liq.live == 200.0
+    assert liq.live is None
+    assert liq.conflict is False
     assert liq.warehouse == 8_002.0
 
 

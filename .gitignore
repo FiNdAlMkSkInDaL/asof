@@ -7,3 +7,4 @@ venv/
 artifacts/asof.sqlite
 artifacts/cycle*.json
 artifacts/cycles.json
+artifacts/live-run.txt

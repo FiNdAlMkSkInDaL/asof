@@ -106,3 +106,5 @@ class Observation:
     identity_ok: bool = True
     live_won_book: bool = False
     market_dead: bool = False
+    live_refresh_done: bool = False
+    available_snapshots: frozenset[str] = field(default_factory=lambda: frozenset({"open", "closed"}))

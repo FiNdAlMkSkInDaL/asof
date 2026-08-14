@@ -22,6 +22,16 @@ def next_action(obs: Observation) -> Action:
         return Action.FETCH_LIVE
     if obs.live is None:
         return Action.HALT
+    if (
+        obs.applies == 1
+        and obs.live_won_book
+        and not obs.market_dead
+        and "closed" in obs.available_snapshots
+        and not obs.live_refresh_done
+        and obs.warehouse is None
+        and not obs.warehouse_miss
+    ):
+        return Action.FETCH_LIVE
     if obs.warehouse is None:
         if obs.warehouse_miss and not obs.retried_pinned:
             return Action.RETRY_WAREHOUSE_PINNED
@@ -30,7 +40,9 @@ def next_action(obs: Observation) -> Action:
         if obs.applies == 0:
             return Action.WAREHOUSE_OPEN
         if obs.applies == 1 and obs.live_won_book and not obs.market_dead:
-            return Action.WAREHOUSE_CLOSED
+            if "closed" in obs.available_snapshots:
+                return Action.WAREHOUSE_CLOSED
+            return Action.HALT
         return Action.HALT
     return Action.APPLY
 

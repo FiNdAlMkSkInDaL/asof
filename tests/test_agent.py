@@ -30,8 +30,13 @@ def test_two_applies_one_token_hold(tmp_path: Path):
     assert c2.by_field("best_bid").winner is Winner.HOLD
     assert c2.by_field("best_bid").value == bid.value
     live_args = [s.args.get("token_id") for s in steps if s.tool == "fetch_live"]
-    assert live_args
-    assert all(t == src.primary_token() for t in live_args)
+    assert live_args == [src.primary_token(), src.primary_token()]
+    apply_lines = [s.message for s in steps if s.kind == "APPLY"]
+    assert apply_lines
+    assert "best_bid=LIVE/R-BOOK-LIVE conflict" in apply_lines[0]
+    assert "last_trade_price=LIVE/R-TRADE-NEWER conflict" in apply_lines[0]
+    assert "liquidity" not in apply_lines[0]
+    assert "mid=" not in apply_lines[0]
     kinds = [s.kind for s in steps]
     assert kinds[0] == "PLAN"
     assert "TOOL" in kinds and "OBSERVE" in kinds and "APPLY" in kinds
@@ -45,6 +50,9 @@ class _MissThenHit:
 
     def primary_token(self) -> str:
         return self.inner.primary_token()
+
+    def available_snapshots(self) -> frozenset[str]:
+        return self.inner.available_snapshots()
 
     def fetch_live(self, token_id: str, *, captured_clock: bool = False) -> LiveBook | None:
         return self.inner.fetch_live(token_id, captured_clock=captured_clock)
@@ -75,6 +83,9 @@ class _AlwaysClosed:
     def primary_token(self) -> str:
         return self.inner.primary_token()
 
+    def available_snapshots(self) -> frozenset[str]:
+        return self.inner.available_snapshots()
+
     def fetch_live(self, token_id: str, *, captured_clock: bool = False) -> LiveBook | None:
         return self.inner.fetch_live(token_id, captured_clock=captured_clock)
 
@@ -92,4 +103,35 @@ def test_dead_cycle1_does_not_run_second_snapshot(tmp_path: Path):
     snaps = [s.args.get("snapshot") for s in agent.steps if s.tool == "fetch_warehouse"]
     assert snaps == ["open"]
     assert any("already dead" in s.message for s in agent.steps)
+    store.close()
+
+
+class _OpenOnly:
+    def __init__(self, inner: CassetteSource) -> None:
+        self.inner = inner
+
+    def primary_token(self) -> str:
+        return self.inner.primary_token()
+
+    def available_snapshots(self) -> frozenset[str]:
+        return frozenset({"open"})
+
+    def fetch_live(self, token_id: str, *, captured_clock: bool = False) -> LiveBook | None:
+        return self.inner.fetch_live(token_id, captured_clock=captured_clock)
+
+    def fetch_warehouse(self, token_id: str, snapshot: str) -> WarehouseRow | None:
+        if snapshot != "open":
+            raise AssertionError("closed snapshot must not be requested")
+        return self.inner.fetch_warehouse(token_id, snapshot)
+
+
+def test_open_only_source_halts_without_closed_fetch(tmp_path: Path):
+    store = Store(tmp_path / "asof.sqlite")
+    src = _OpenOnly(CassetteSource(CASSETTES, NOW))
+    agent = Agent(src, store, NOW)
+    agent.run()
+    assert len(agent.results) == 1
+    snaps = [s.args.get("snapshot") for s in agent.steps if s.tool == "fetch_warehouse"]
+    assert snaps == ["open"]
+    assert any("cassette-only" in s.message for s in agent.steps)
     store.close()

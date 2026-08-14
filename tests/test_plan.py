@@ -89,7 +89,7 @@ def test_both_present_applies():
     assert next_action(obs) is Action.APPLY
 
 
-def test_after_microstructure_fetches_closed():
+def test_after_microstructure_refetches_live():
     obs = Observation(
         token_id="t",
         live_fetched=True,
@@ -97,8 +97,38 @@ def test_after_microstructure_fetches_closed():
         applies=1,
         live_won_book=True,
         market_dead=False,
+        live_refresh_done=False,
+        available_snapshots=frozenset({"open", "closed"}),
+    )
+    assert next_action(obs) is Action.FETCH_LIVE
+
+
+def test_after_live_refresh_fetches_closed():
+    obs = Observation(
+        token_id="t",
+        live_fetched=True,
+        live=_live(),
+        applies=1,
+        live_won_book=True,
+        market_dead=False,
+        live_refresh_done=True,
+        available_snapshots=frozenset({"open", "closed"}),
     )
     assert next_action(obs) is Action.WAREHOUSE_CLOSED
+
+
+def test_no_closed_snapshot_halts():
+    obs = Observation(
+        token_id="t",
+        live_fetched=True,
+        live=_live(),
+        applies=1,
+        live_won_book=True,
+        market_dead=False,
+        live_refresh_done=True,
+        available_snapshots=frozenset({"open"}),
+    )
+    assert next_action(obs) is Action.HALT
 
 
 def test_dead_cycle1_halts_not_closed_snapshot():

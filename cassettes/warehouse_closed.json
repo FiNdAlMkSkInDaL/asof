@@ -167,11 +167,15 @@
   },
   "version": "v1",
   "_asof_stub": {
-    "note": "Same identity as warehouse_open.json and live.json. closed and acceptingOrders overlaid so cycle 2 can show R-BOOK-DEAD and HOLD of cycle-1 live prices. Not a different market and not a transplanted book.",
+    "note": "Same identity as warehouse_open.json and live.json. Inherits the lagged price keys from warehouse_open. closed and acceptingOrders overlaid so cycle 2 can show R-BOOK-DEAD and HOLD of cycle-1 live prices. Not a different market and not a transplanted book.",
     "keys": [
+      "bestBid",
+      "bestAsk",
+      "lastTradePrice",
       "closed",
       "acceptingOrders"
     ],
+    "inherited_from": "warehouse_open.json",
     "captured": {
       "closed": false,
       "acceptingOrders": true

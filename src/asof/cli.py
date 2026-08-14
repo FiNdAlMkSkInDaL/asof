@@ -70,19 +70,33 @@ def _demo(args: argparse.Namespace) -> int:
             return 2
         source = LiveSource(now, args.token)
         print("live mode is one network cycle; the closed snapshot is cassette-only", file=sys.stderr)
+        transcript = "live-run.txt"
     else:
         source = CassetteSource(CASSETTES, now)
+        transcript = "demo-run.txt"
     agent = Agent(source, store, now)
     steps = agent.run()
-    write_artifacts(steps, agent.results, args.artifacts)
+    write_artifacts(steps, agent.results, args.artifacts, transcript_name=transcript)
     print(render_transcript(steps), end="")
-    print(f"wrote {args.artifacts / 'demo-run.txt'}")
+    print(f"wrote {args.artifacts / transcript}")
     if agent.results:
         token = agent.results[0].token_id
         print(f"next: python -m asof explain {token}.best_bid")
-        print(f"      python -m asof explain {token}.closed")
+        if _closed_true(agent.results):
+            print(f"      python -m asof explain {token}.closed")
     store.close()
     return 0
+
+
+def _closed_true(results: list) -> bool:
+    for result in results:
+        try:
+            d = result.by_field("closed")
+        except KeyError:
+            continue
+        if d.warehouse is True:
+            return True
+    return False
 
 
 def _query(args: argparse.Namespace) -> int:

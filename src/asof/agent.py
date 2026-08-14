@@ -30,7 +30,10 @@ class Agent:
         self.now = now
         self.steps: list[Step] = []
         self.results: list[ReconcileResult] = []
-        self.obs = Observation(token_id=source.primary_token())
+        self.obs = Observation(
+            token_id=source.primary_token(),
+            available_snapshots=source.available_snapshots(),
+        )
 
     def run(self) -> list[Step]:
         while True:
@@ -57,6 +60,8 @@ class Agent:
             return "Live book missing. Halt."
         if self.obs.warehouse_miss and self.obs.retried_pinned:
             return "Warehouse still missing after pinned retry. Halt."
+        if self.obs.applies == 1 and "closed" not in self.obs.available_snapshots:
+            return "Closed overlay is cassette-only. Halt."
         if self.obs.applies == 1 and self.obs.market_dead:
             return "Cycle 1 was already dead. Do not fetch a closed overlay. Halt."
         if self.obs.applies == 1 and not self.obs.live_won_book:
@@ -68,6 +73,8 @@ class Agent:
         self._emit("PLAN", f"Fetch the live book for token {token}.")
         self._emit("TOOL", f"fetch_live({token})", tool="fetch_live", args={"token_id": token})
         live = self.source.fetch_live(token)
+        if self.obs.applies >= 1:
+            self.obs.live_refresh_done = True
         self.obs.live_fetched = True
         self.obs.live = live
         if live is None:
@@ -76,7 +83,8 @@ class Agent:
         self.obs.token_id = live.token_id
         self._emit(
             "OBSERVE",
-            f"book bid={_n(live.best_bid)} ask={_n(live.best_ask)} mid={_n(live.mid)} quoting={live.quoting}",
+            f"book bid={_n(live.best_bid)} ask={_n(live.best_ask)} mid={_n(live.mid)} "
+            f"quoting={live.quoting} top={_n(live.top_liquidity)}",
         )
 
     def _do_fetch_warehouse(self, snapshot: str) -> None:
@@ -194,7 +202,7 @@ def _observe(live: LiveBook, warehouse: WarehouseRow) -> str:
 def _apply_summary(result: ReconcileResult) -> str:
     parts = []
     for d in result.decisions:
-        if d.field in {"best_bid", "best_ask", "mid", "volume", "closed", "accepting_orders", "last_trade_price"}:
+        if d.field in {"best_bid", "best_ask", "last_trade_price", "closed", "accepting_orders"}:
             flag = " conflict" if d.conflict else ""
             parts.append(f"{d.field}={d.winner.value}/{d.rule_id}{flag}")
     ident = "identity_ok" if result.identity_ok else "identity_refused"
@@ -229,9 +237,15 @@ def _decision_dict(d: FieldDecision) -> dict[str, Any]:
     }
 
 
-def write_artifacts(steps: list[Step], results: list[ReconcileResult], directory: Path) -> None:
+def write_artifacts(
+    steps: list[Step],
+    results: list[ReconcileResult],
+    directory: Path,
+    *,
+    transcript_name: str = "demo-run.txt",
+) -> None:
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / "demo-run.txt").write_text(render_transcript(steps), encoding="utf-8")
+    (directory / transcript_name).write_text(render_transcript(steps), encoding="utf-8")
     payload = []
     for i, result in enumerate(results, start=1):
         entry = {
