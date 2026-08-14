@@ -1,14 +1,11 @@
 # Cassettes
 
-Committed public Polymarket payloads used by `asof demo` (no network).
+Committed public Polymarket payloads used by `python -m asof demo` (no network). One outcome token. Two warehouse snapshots of that token.
 
 | File | What it is |
 | --- | --- |
-| `cycle1_live.json` | Unmodified CLOB `GET /book` for the Yes token of “Will Gavin Newsom win the 2028 Democratic presidential nomination?” |
-| `cycle1_warehouse.json` | Unmodified Gamma market row for that event |
-| `cycle2_warehouse.json` | Unmodified Gamma row for a **closed** market (“Will Joe Biden get Coronavirus before the election?”) |
-| `cycle2_live.json` | CLOB book **levels** copied from cycle 1; `asset_id` and `market` rewritten to the closed market’s token and condition id |
+| `live.json` | Unmodified CLOB `GET /book` for the Yes token of “Will Gavin Newsom win the 2028 Democratic presidential nomination?” |
+| `warehouse_open.json` | Captured Gamma row for that market. `bestBid`, `bestAsk`, and `lastTradePrice` are lagged (`_asof_stub`). Recapture on 2026-08-14 still matched the book. |
+| `warehouse_closed.json` | Same identity. `closed` / `acceptingOrders` overlaid (`_asof_stub`) so cycle 2 can HOLD cycle-1 live prices. Not a different market. |
 
-Cycle 2 is the documented splice in POLICY.md: closed books are often unrestorable, and the demo must show `R-BOOK-DEAD` against a quoting book.
-
-On replay, `CassetteSource` sets live `as_of` to `now - 0.4s` so the 2s freshness SLA still holds years after capture. Raw `timestamp` remains in the JSON.
+On replay, `CassetteSource.fetch_live` sets `as_of` to `now - 0.4s` so the 2s SLA still holds. Pass `captured_clock=True` to use the JSON timestamp. Raw `timestamp` remains in the JSON.

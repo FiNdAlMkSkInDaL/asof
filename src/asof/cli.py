@@ -28,18 +28,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    demo = sub.add_parser("demo", help="Run two reconciliation cycles")
-    demo.add_argument("--live", action="store_true", help="Hit public Polymarket APIs instead of cassettes")
-    demo.add_argument("--token", help="Cycle-1 token id (required with --live)")
-    demo.add_argument("--token-cycle2", help="Cycle-2 token id (live mode; default: cassette closed-market token)")
+    demo = sub.add_parser("demo", help="Run reconciliation (two cassette snapshots, or one live cycle)")
+    demo.add_argument("--live", action="store_true", help="Hit public Polymarket APIs for one cycle")
+    demo.add_argument("--token", help="Token id (required with --live)")
     demo.add_argument("--db", type=Path, default=DEFAULT_DB)
     demo.add_argument("--artifacts", type=Path, default=ARTIFACTS)
+    demo.add_argument("--reset", action="store_true", help="Allow deleting a non-default --db")
 
     query = sub.add_parser("query", help="Print reconciled state for a token")
     query.add_argument("token")
     query.add_argument("--db", type=Path, default=DEFAULT_DB)
 
-    explain = sub.add_parser("explain", help="Explain one field, e.g. TOKEN.mid")
+    explain = sub.add_parser("explain", help="Explain one field, e.g. TOKEN.best_bid")
     explain.add_argument("target", help="TOKEN.field")
     explain.add_argument("--db", type=Path, default=DEFAULT_DB)
 
@@ -57,14 +57,19 @@ def _demo(args: argparse.Namespace) -> int:
     now = datetime.now(timezone.utc)
     args.db.parent.mkdir(parents=True, exist_ok=True)
     if args.db.exists():
-        args.db.unlink()
+        default = args.db.resolve() == DEFAULT_DB.resolve()
+        if default or args.reset:
+            args.db.unlink()
+        else:
+            print("refusing to destroy --db without --reset", file=sys.stderr)
+            return 2
     store = Store(args.db)
     if args.live:
         if not args.token:
             print("live mode requires --token", file=sys.stderr)
             return 2
-        cycle2 = args.token_cycle2 or CassetteSource(CASSETTES, now).cycle2_token()
-        source = LiveSource(now, args.token, cycle2)
+        source = LiveSource(now, args.token)
+        print("live mode is one network cycle; the closed snapshot is cassette-only", file=sys.stderr)
     else:
         source = CassetteSource(CASSETTES, now)
     agent = Agent(source, store, now)
@@ -72,10 +77,10 @@ def _demo(args: argparse.Namespace) -> int:
     write_artifacts(steps, agent.results, args.artifacts)
     print(render_transcript(steps), end="")
     print(f"wrote {args.artifacts / 'demo-run.txt'}")
-    if len(agent.results) >= 2:
-        t1, t2 = agent.results[0].token_id, agent.results[1].token_id
-        print(f"next: asof explain {t1}.mid")
-        print(f"      asof explain {t2}.closed")
+    if agent.results:
+        token = agent.results[0].token_id
+        print(f"next: python -m asof explain {token}.best_bid")
+        print(f"      python -m asof explain {token}.closed")
     store.close()
     return 0
 
@@ -96,7 +101,7 @@ def _query(args: argparse.Namespace) -> int:
 
 def _explain(args: argparse.Namespace) -> int:
     if "." not in args.target:
-        print("usage: asof explain TOKEN.field", file=sys.stderr)
+        print("usage: python -m asof explain TOKEN.field", file=sys.stderr)
         return 2
     token, field = args.target.split(".", 1)
     store = Store(args.db)

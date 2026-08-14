@@ -6,10 +6,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from asof.plan import Action, book_won_live, market_was_dead, next_action
 from asof.policy import reconcile
 from asof.store import Store
 from asof.tools import MarketSource
-from asof.types import FieldDecision, LiveBook, ReconcileResult, WarehouseRow, Winner
+from asof.types import FieldDecision, LiveBook, Observation, ReconcileResult, WarehouseRow
 
 
 @dataclass
@@ -29,90 +30,125 @@ class Agent:
         self.now = now
         self.steps: list[Step] = []
         self.results: list[ReconcileResult] = []
-        self.world = type("World", (), {"token_id": "", "cycle": 0})()
+        self.obs = Observation(token_id=source.primary_token())
 
     def run(self) -> list[Step]:
-        self.world.token_id = self.source.cycle1_token()
-        self._cycle(1)
-        if self._cycle1_was_microstructure():
-            self._emit(
-                "PLAN",
-                "Cycle 1 conflicts were book vs catalogue. "
-                "Next market should disagree on lifecycle, not the same price lag.",
-            )
-        else:
-            self._emit(
-                "PLAN",
-                "Cycle 1 was not a clean microstructure fight. "
-                "Still moving to the lifecycle market to show a second winner class.",
-            )
-        self.world.token_id = self.source.cycle2_token()
-        self._cycle(2)
+        while True:
+            action = next_action(self.obs)
+            if action is Action.HALT:
+                self._emit("PLAN", self._halt_reason())
+                break
+            if action is Action.FETCH_LIVE:
+                self._do_fetch_live()
+            elif action is Action.WAREHOUSE_OPEN:
+                self._do_fetch_warehouse("open")
+            elif action is Action.WAREHOUSE_CLOSED:
+                self._do_fetch_warehouse("closed")
+            elif action is Action.RETRY_WAREHOUSE_PINNED:
+                self._do_retry_pinned()
+            elif action is Action.APPLY:
+                self._do_apply()
         return self.steps
 
-    def _cycle1_was_microstructure(self) -> bool:
-        if not self.results:
-            return False
-        r = self.results[0]
-        live_book = any(
-            d.field in {"best_bid", "best_ask", "mid"} and d.winner is Winner.LIVE
-            for d in r.decisions
-        )
-        dead = any(d.rule_id == "R-BOOK-DEAD" for d in r.decisions)
-        return live_book and not dead
+    def _halt_reason(self) -> str:
+        if self.obs.applies >= 2:
+            return "Two applies done. Halt."
+        if self.obs.live_fetched and self.obs.live is None:
+            return "Live book missing. Halt."
+        if self.obs.warehouse_miss and self.obs.retried_pinned:
+            return "Warehouse still missing after pinned retry. Halt."
+        if self.obs.applies == 1 and self.obs.market_dead:
+            return "Cycle 1 was already dead. Do not fetch a closed overlay. Halt."
+        if self.obs.applies == 1 and not self.obs.live_won_book:
+            return "Cycle 1 was not a live book win. Halt."
+        return "Halt."
 
-    def _cycle(self, cycle: int) -> None:
-        self.world.cycle = cycle
-        token = self.world.token_id
-        self._emit("PLAN", f"Reconcile token {token} from the live book and the warehouse.")
-
-        live = self._fetch_live(token)
+    def _do_fetch_live(self) -> None:
+        token = self.obs.token_id
+        self._emit("PLAN", f"Fetch the live book for token {token}.")
+        self._emit("TOOL", f"fetch_live({token})", tool="fetch_live", args={"token_id": token})
+        live = self.source.fetch_live(token)
+        self.obs.live_fetched = True
+        self.obs.live = live
         if live is None:
-            self._emit("OBSERVE", "Live book missing. Cannot apply policy.")
+            self._emit("OBSERVE", "fetch_live returned none")
             return
+        self.obs.token_id = live.token_id
+        self._emit(
+            "OBSERVE",
+            f"book bid={_n(live.best_bid)} ask={_n(live.best_ask)} mid={_n(live.mid)} quoting={live.quoting}",
+        )
 
-        warehouse = self._fetch_warehouse(token)
-        if warehouse is None:
-            self._emit(
-                "PLAN",
-                f"Warehouse miss on token id. Retry by condition_id {live.condition_id}.",
-            )
-            warehouse = self._fetch_warehouse(live.condition_id)
-        if warehouse is None:
-            self._emit("OBSERVE", "Warehouse still missing after condition_id retry. Skip apply.")
+    def _do_fetch_warehouse(self, snapshot: str) -> None:
+        token = self.obs.token_id
+        self._emit("PLAN", f"Fetch warehouse snapshot {snapshot!r} for token {token}.")
+        self._emit(
+            "TOOL",
+            f"fetch_warehouse({token}, {snapshot})",
+            tool="fetch_warehouse",
+            args={"token_id": token, "snapshot": snapshot},
+        )
+        row = self.source.fetch_warehouse(token, snapshot)
+        self.obs.warehouse_snapshot = snapshot
+        if row is None:
+            self.obs.warehouse = None
+            self.obs.warehouse_miss = True
+            self._emit("OBSERVE", "fetch_warehouse returned none")
             return
+        self.obs.warehouse = row
+        self.obs.warehouse_miss = False
+        self.obs.retried_pinned = False
+        self._emit(
+            "OBSERVE",
+            f"catalogue closed={row.closed} accepting={row.accepting_orders} "
+            f"bid={_n(row.best_bid)} ask={_n(row.best_ask)} last={_n(row.last_trade_price)}",
+        )
 
+    def _do_retry_pinned(self) -> None:
+        live = self.obs.live
+        assert live is not None
+        snap = self.obs.warehouse_snapshot or "open"
+        self._emit("PLAN", f"Warehouse miss. Retry snapshot {snap!r} pinned to live token {live.token_id}.")
+        self.obs.retried_pinned = True
+        self._emit(
+            "TOOL",
+            f"fetch_warehouse({live.token_id}, {snap})",
+            tool="fetch_warehouse",
+            args={"token_id": live.token_id, "snapshot": snap},
+        )
+        row = self.source.fetch_warehouse(live.token_id, snap)
+        if row is None:
+            self.obs.warehouse = None
+            self.obs.warehouse_miss = True
+            self._emit("OBSERVE", "fetch_warehouse returned none")
+            return
+        self.obs.warehouse = row
+        self.obs.warehouse_miss = False
+        self._emit(
+            "OBSERVE",
+            f"catalogue closed={row.closed} accepting={row.accepting_orders} "
+            f"bid={_n(row.best_bid)} ask={_n(row.best_ask)}",
+        )
+
+    def _do_apply(self) -> None:
+        live = self.obs.live
+        warehouse = self.obs.warehouse
+        assert live is not None and warehouse is not None
         self._emit("OBSERVE", _observe(live, warehouse))
-        prev = self.store.previous(live.token_id) or self.store.previous(warehouse.token_id)
+        prev = self.store.previous(live.token_id)
         result = reconcile(live, warehouse, self.now, previous=prev)
+        cycle = self.obs.applies + 1
         self.store.put(result, cycle)
         self.results.append(result)
         self._emit("APPLY", _apply_summary(result), decisions=result.decisions)
-
-    def _fetch_live(self, token_id: str) -> LiveBook | None:
-        self._emit("TOOL", f"fetch_live({token_id})", tool="fetch_live", args={"token_id": token_id})
-        live = self.source.fetch_live(token_id)
-        if live is None:
-            self._emit("OBSERVE", "fetch_live returned none")
-        else:
-            self._emit(
-                "OBSERVE",
-                f"book bid={_n(live.best_bid)} ask={_n(live.best_ask)} mid={_n(live.mid)} quoting={live.quoting}",
-            )
-        return live
-
-    def _fetch_warehouse(self, key: str) -> WarehouseRow | None:
-        self._emit("TOOL", f"fetch_warehouse({key})", tool="fetch_warehouse", args={"key": key})
-        row = self.source.fetch_warehouse(key)
-        if row is None:
-            self._emit("OBSERVE", "fetch_warehouse returned none")
-        else:
-            self._emit(
-                "OBSERVE",
-                f"catalogue closed={row.closed} accepting={row.accepting_orders} "
-                f"outcome={_n(row.outcome_price)} volume={_n(row.volume)}",
-            )
-        return row
+        self.obs.applies += 1
+        self.obs.identity_ok = result.identity_ok
+        self.obs.live_won_book = book_won_live(result)
+        self.obs.market_dead = market_was_dead(result)
+        self.obs.last_rule_ids = frozenset(d.rule_id for d in result.decisions)
+        self.obs.warehouse = None
+        self.obs.warehouse_miss = False
+        self.obs.retried_pinned = False
 
     def _emit(
         self,
@@ -123,10 +159,13 @@ class Agent:
         args: dict[str, Any] | None = None,
         decisions: list[FieldDecision] | None = None,
     ) -> None:
+        cycle = min(max(self.obs.applies, 0) + (0 if kind == "APPLY" else 1), 2)
+        if kind == "APPLY":
+            cycle = self.obs.applies + 1
         self.steps.append(
             Step(
                 kind=kind,
-                cycle=self.world.cycle,
+                cycle=cycle,
                 message=message,
                 tool=tool,
                 args=args or {},
@@ -145,8 +184,9 @@ def _n(value: Any) -> str:
 
 def _observe(live: LiveBook, warehouse: WarehouseRow) -> str:
     return (
-        f"same-entity={live.token_id == warehouse.token_id or live.token_id in warehouse.clob_token_ids}; "
-        f"live mid={_n(live.mid)} vs catalogue {_n(warehouse.outcome_price)}; "
+        f"same-entity={live.token_id == warehouse.token_id}; "
+        f"live bid={_n(live.best_bid)} ask={_n(live.best_ask)} vs "
+        f"wh bid={_n(warehouse.best_bid)} ask={_n(warehouse.best_ask)}; "
         f"warehouse closed={warehouse.closed} accepting={warehouse.accepting_orders}"
     )
 

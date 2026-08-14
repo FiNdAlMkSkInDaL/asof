@@ -49,6 +49,29 @@ def _ms_to_dt(value: Any) -> datetime | None:
     return datetime.fromtimestamp(n, tz=timezone.utc)
 
 
+def parse_dt(value: Any) -> datetime | None:
+    """ISO-8601 or unix ms/seconds. Does not invent a time from a date-only string that is not ISO."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if "T" not in text and len(text) >= 19 and text[4] == "-":
+            text = text[:10] + "T" + text[11:]
+        if "T" in text or text.endswith("Z") or "+" in text[1:]:
+            try:
+                dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            except ValueError:
+                return _ms_to_dt(value)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+    return _ms_to_dt(value)
+
+
 def _best_bid(bids: list[dict[str, Any]]) -> tuple[float | None, float | None]:
     best_px: float | None = None
     best_sz: float | None = None
@@ -83,7 +106,7 @@ def parse_book(raw: dict[str, Any], *, as_of: datetime | None = None) -> LiveBoo
     top = None
     if bid_sz is not None or ask_sz is not None:
         top = (bid_sz or 0.0) + (ask_sz or 0.0)
-    ts = as_of or _ms_to_dt(raw.get("timestamp")) or datetime.now(timezone.utc)
+    ts = as_of or parse_dt(raw.get("timestamp")) or datetime.now(timezone.utc)
     return LiveBook(
         token_id=str(raw.get("asset_id") or ""),
         condition_id=str(raw.get("market") or ""),
@@ -91,7 +114,7 @@ def parse_book(raw: dict[str, Any], *, as_of: datetime | None = None) -> LiveBoo
         best_bid=bid_px,
         best_ask=ask_px,
         last_trade_price=_f(raw.get("last_trade_price")),
-        last_trade_time=None,
+        last_trade_time=parse_dt(raw.get("last_trade_time")),
         quoting=bool(bids or asks),
         top_liquidity=top,
     )
@@ -118,98 +141,90 @@ def parse_gamma(raw: dict[str, Any], token_id: str | None = None) -> WarehouseRo
         accepting_orders=raw.get("acceptingOrders"),
         volume=vol,
         liquidity=liq,
+        best_bid=_f(raw.get("bestBid")),
+        best_ask=_f(raw.get("bestAsk")),
         outcome_price=outcome,
         last_trade_price=_f(raw.get("lastTradePrice")),
-        last_trade_time=_ms_to_dt(raw.get("closedTime")) if raw.get("closed") else None,
+        last_trade_time=parse_dt(raw.get("lastTradeTime")),
         slug=str(raw.get("slug") or ""),
     )
 
 
 class MarketSource(Protocol):
-    def cycle1_token(self) -> str: ...
-    def cycle2_token(self) -> str: ...
-    def fetch_live(self, token_id: str) -> LiveBook | None: ...
-    def fetch_warehouse(self, key: str) -> WarehouseRow | None: ...
+    def primary_token(self) -> str: ...
+    def fetch_live(self, token_id: str, *, captured_clock: bool = False) -> LiveBook | None: ...
+    def fetch_warehouse(self, token_id: str, snapshot: str) -> WarehouseRow | None: ...
 
 
 class CassetteSource:
-    """Replay committed CLOB/Gamma payloads. Live as_of is rebased to `now` so the SLA holds."""
+    """Replay committed CLOB/Gamma payloads for one token and two warehouse snapshots."""
 
     def __init__(self, directory: Path, now: datetime) -> None:
         self.now = now
         self.dir = directory
-        self._live_raw: dict[str, dict[str, Any]] = {}
-        self._wh: dict[str, dict[str, Any]] = {}
-        for name in ("cycle1_live.json", "cycle2_live.json"):
-            raw = json.loads((directory / name).read_text(encoding="utf-8"))
-            self._live_raw[str(raw["asset_id"])] = raw
-        for name in ("cycle1_warehouse.json", "cycle2_warehouse.json"):
-            raw = json.loads((directory / name).read_text(encoding="utf-8"))
-            row = parse_gamma(raw)
-            self._wh[row.token_id] = raw
-            if row.condition_id:
-                self._wh[row.condition_id] = raw
-            if row.slug:
-                self._wh[row.slug] = raw
-            for tid in row.clob_token_ids:
-                self._wh[tid] = raw
+        self._live_raw = json.loads((directory / "live.json").read_text(encoding="utf-8"))
+        self._snaps: dict[str, dict[str, Any]] = {
+            "open": json.loads((directory / "warehouse_open.json").read_text(encoding="utf-8")),
+            "closed": json.loads((directory / "warehouse_closed.json").read_text(encoding="utf-8")),
+        }
 
-    def cycle1_token(self) -> str:
-        raw = json.loads((self.dir / "cycle1_live.json").read_text(encoding="utf-8"))
-        return str(raw["asset_id"])
+    def primary_token(self) -> str:
+        return str(self._live_raw["asset_id"])
 
-    def cycle2_token(self) -> str:
-        raw = json.loads((self.dir / "cycle2_live.json").read_text(encoding="utf-8"))
-        return str(raw["asset_id"])
-
-    def fetch_live(self, token_id: str) -> LiveBook | None:
-        raw = self._live_raw.get(token_id)
-        if raw is None:
+    def fetch_live(self, token_id: str, *, captured_clock: bool = False) -> LiveBook | None:
+        if token_id != str(self._live_raw.get("asset_id")):
             return None
-        return parse_book(raw, as_of=self.now - timedelta(seconds=0.4))
+        if captured_clock:
+            return parse_book(self._live_raw)
+        return parse_book(self._live_raw, as_of=self.now - timedelta(seconds=0.4))
 
-    def fetch_warehouse(self, key: str) -> WarehouseRow | None:
-        raw = self._wh.get(key)
-        if raw is None:
+    def fetch_warehouse(self, token_id: str, snapshot: str) -> WarehouseRow | None:
+        if snapshot not in self._snaps:
             return None
-        token = key if key in {str(x) for x in _as_list(raw.get("clobTokenIds"))} else None
-        return parse_gamma(raw, token_id=token)
+        raw = self._snaps[snapshot]
+        ids = [str(x) for x in _as_list(raw.get("clobTokenIds"))]
+        cond = str(raw.get("conditionId") or "")
+        slug = str(raw.get("slug") or "")
+        keys = set(ids) | {cond, slug, self.primary_token()}
+        if token_id not in keys:
+            return None
+        pin = token_id if token_id in ids else self.primary_token()
+        return parse_gamma(raw, token_id=pin)
 
 
 class LiveSource:
+    """One honest network cycle. snapshot='closed' returns None; we will not splice a dead book."""
+
     def __init__(
         self,
         now: datetime,
-        cycle1: str,
-        cycle2: str,
+        token_id: str,
         client: httpx.Client | None = None,
     ) -> None:
         self.now = now
-        self._cycle1 = cycle1
-        self._cycle2 = cycle2
+        self._token = token_id
         self.client = client or httpx.Client(
             timeout=20.0,
             headers={"User-Agent": USER_AGENT},
         )
 
-    def cycle1_token(self) -> str:
-        return self._cycle1
+    def primary_token(self) -> str:
+        return self._token
 
-    def cycle2_token(self) -> str:
-        return self._cycle2
-
-    def fetch_live(self, token_id: str) -> LiveBook | None:
+    def fetch_live(self, token_id: str, *, captured_clock: bool = False) -> LiveBook | None:
         r = self.client.get(f"{CLOB_URL}/book", params={"token_id": token_id})
         if r.status_code == 404:
             return None
         r.raise_for_status()
         return parse_book(r.json())
 
-    def fetch_warehouse(self, key: str) -> WarehouseRow | None:
+    def fetch_warehouse(self, token_id: str, snapshot: str) -> WarehouseRow | None:
+        if snapshot != "open":
+            return None
         for params in (
-            {"clob_token_ids": key},
-            {"condition_ids": key},
-            {"slug": key},
+            {"clob_token_ids": token_id},
+            {"condition_ids": token_id},
+            {"slug": token_id},
         ):
             r = self.client.get(f"{GAMMA_URL}/markets", params=params)
             if r.status_code >= 400:
@@ -220,6 +235,6 @@ class LiveSource:
                 continue
             raw = rows[0]
             ids = [str(x) for x in _as_list(raw.get("clobTokenIds"))]
-            token = key if key in ids else None
-            return parse_gamma(raw, token_id=token)
+            pin = token_id if token_id in ids else token_id
+            return parse_gamma(raw, token_id=pin)
         return None

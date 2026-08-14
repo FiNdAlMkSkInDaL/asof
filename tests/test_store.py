@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -31,6 +32,8 @@ def test_put_and_explain(tmp_path: Path):
         volume=100.0,
         liquidity=200.0,
         outcome_price=0.6,
+        best_bid=0.3,
+        best_ask=0.7,
         last_trade_price=0.55,
         last_trade_time=NOW,
     )
@@ -45,4 +48,25 @@ def test_put_and_explain(tmp_path: Path):
     assert {r["field"] for r in rows} >= {"mid", "volume", "closed"}
     prev = store.previous("t1")
     assert prev["mid"] == live.mid
+    dead = WarehouseRow(
+        token_id="t1",
+        condition_id="c1",
+        clob_token_ids=("t1", "t2"),
+        closed=True,
+        accepting_orders=False,
+        volume=100.0,
+        liquidity=200.0,
+        best_bid=0.3,
+        best_ask=0.7,
+        outcome_price=0.6,
+        last_trade_price=0.55,
+        last_trade_time=NOW,
+    )
+    held = reconcile(live, dead, NOW, previous=prev)
+    store.put(held, cycle=2)
+    row2 = store.explain("t1", "mid")
+    assert row2 is not None
+    assert row2["winner"] == Winner.HOLD.value
+    assert row2["rule_id"] == "R-BOOK-DEAD"
+    assert json.loads(row2["value"]) == live.mid
     store.close()

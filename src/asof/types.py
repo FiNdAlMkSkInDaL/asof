@@ -48,10 +48,18 @@ class WarehouseRow:
     accepting_orders: bool | None
     volume: float | None
     liquidity: float | None
+    best_bid: float | None
+    best_ask: float | None
     outcome_price: float | None
     last_trade_price: float | None
     last_trade_time: datetime | None
     slug: str = ""
+
+    @property
+    def mid(self) -> float | None:
+        if self.best_bid is None or self.best_ask is None:
+            return None
+        return (self.best_bid + self.best_ask) / 2.0
 
 
 @dataclass(frozen=True)
@@ -82,3 +90,19 @@ class ReconcileResult:
             if d.field == name:
                 return d
         raise KeyError(name)
+
+
+@dataclass
+class Observation:
+    token_id: str = ""
+    live: LiveBook | None = None
+    warehouse: WarehouseRow | None = None
+    warehouse_snapshot: str | None = None
+    live_fetched: bool = False
+    warehouse_miss: bool = False
+    retried_pinned: bool = False
+    applies: int = 0
+    last_rule_ids: frozenset[str] = field(default_factory=frozenset)
+    identity_ok: bool = True
+    live_won_book: bool = False
+    market_dead: bool = False

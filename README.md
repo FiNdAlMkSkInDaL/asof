@@ -1,6 +1,6 @@
 # asof
 
-Reconcile a live Polymarket order book with a Gamma warehouse row. The planner fetches; `policy.reconcile` is the only writer.
+Reconcile a live Polymarket order book with successive Gamma warehouse snapshots of the **same** outcome token. The planner fetches; `policy.reconcile` is the only writer.
 
 No API keys. Python 3.11+. The default demo is cassette replay (no network).
 
@@ -12,57 +12,67 @@ pytest
 python -m asof demo
 ```
 
-Then, using the token ids printed at the end of the transcript:
+Then:
 
 ```bash
 python -m asof query 54533043819946592547517511176940999955633860128497669742211153063842200957669
-python -m asof explain 54533043819946592547517511176940999955633860128497669742211153063842200957669.mid
-python -m asof explain 53135072462907880191400140706440867753044989936304433583131786753949599718775.closed
+python -m asof explain 54533043819946592547517511176940999955633860128497669742211153063842200957669.best_bid
+python -m asof explain 54533043819946592547517511176940999955633860128497669742211153063842200957669.closed
 ```
 
-Optional live run (public Polymarket HTTP, no keys):
+Optional live run (public Polymarket HTTP, no keys). One network cycle. The closed snapshot is cassette-only; this will not splice a dead book onto a live token.
 
 ```bash
-python -m asof demo --live --token <clob_token_id> [--token-cycle2 <other_token_id>]
+python -m asof demo --live --token <clob_token_id>
 ```
 
-`python -m asof` is the supported entry point. A console script named `asof` is also installed.
+`python -m asof` is the supported entry point.
 
 ## Requirements (their email → this repo)
 
 | Requirement | Where it is |
 | --- | --- |
 | Agent fetches from two independent sources (live feed and warehouse snapshot) | Live: CLOB `GET /book`. Warehouse: Gamma `GET /markets`. Parsers and sources in `src/asof/tools.py`. |
-| Detect disagreements on at least three fields | Cycle 1: `best_bid`, `best_ask`, `last_trade_price`, `liquidity`. Cycle 2: book prices vs a closed catalogue, plus `closed`. See `artifacts/demo-run.txt`. |
+| Detect disagreements on at least three fields | Cycle 1 like-for-like: `best_bid`, `best_ask`, `last_trade_price` (book vs catalogue bid/ask/last trade). See `artifacts/demo-run.txt`. Catalogue `outcomePrice` is not counted as a bid. |
 | Documented conflict policy, chosen and justified | `POLICY.md`. Applied only by `src/asof/policy.py`. |
-| At least two full reconciliation cycles, conflicts in each | `python -m asof demo`. Cycle 1 is microstructure (live wins bid/ask). Cycle 2 is lifecycle (`R-BOOK-DEAD` / warehouse `closed`). |
+| At least two full reconciliation cycles, conflicts in each | `python -m asof demo`. Same token. Cycle 1: live wins lagged bid/ask. Cycle 2: warehouse `closed` → prices HOLD the cycle-1 live values (`R-BOOK-DEAD`). |
 | Logs that say which source won and why | Printed `PLAN` / `TOOL` / `OBSERVE` / `APPLY` loop; each APPLY line has winner + rule id. |
-| Queryable / explainable reconciled state | SQLite in `src/asof/store.py`. `asof query TOKEN`, `asof explain TOKEN.field`. |
-| Agent plans next steps from observations, not a fixed sequence | `src/asof/agent.py`. Branches below. |
+| Queryable / explainable reconciled state | SQLite in `src/asof/store.py`. `python -m asof query TOKEN`, `python -m asof explain TOKEN.field`. |
+| Agent plans next steps from observations, not a fixed sequence | Pure `next_action(obs)` in `src/asof/plan.py`. If cycle 1 is already dead, it **halts** instead of fetching the closed overlay. Warehouse miss retries pinned to the live token. Two applies → halt. |
 | Public repo + how to run + what I would do next | This file. |
 
 ## Authority
 
 | Kind of field | Who wins | Why |
 | --- | --- | --- |
-| Bid, ask, mid, spread | Live, only if the book is fresh (≤2s), uncrossed, and the market is not dead | The book is the market now. Gamma `outcomePrice` is a lagged catalogue number. |
+| Bid, ask | Live, only if the book is fresh (≤2s), uncrossed, and the market is not dead | Compared to warehouse `bestBid` / `bestAsk`. |
+| Mid, spread | Live, only when the book is fresh, two-sided, and uncrossed | Derived from the live book. Not from Gamma `outcomePrice`. |
 | Volume, liquidity | Warehouse | Aggregates are not top-of-book size. |
-| `closed`, `accepting_orders` | Warehouse | Lifecycle is official. A quoting book does not reopen a closed market. |
-| Last trade | Newer timestamp; HOLD if the market is dead | A trade is an event. Recency is the meaning of the field. |
-| Identity mismatch | HOLD everything (`R-ID-HOLD`) | Not the same entity. Refuse the merge. |
+| `closed`, `accepting_orders` | Warehouse | Lifecycle is official. Live CLOB `/book` does not carry these keys (live side is `None`). |
+| Last trade | Newer timestamp; HOLD if the market is dead; fresh live if no clocks | Compared to warehouse `lastTradePrice`. |
+| Identity mismatch | HOLD everything (`R-ID-HOLD`) | `live.token_id` must equal `warehouse.token_id`. Sibling Yes/No tokens do not merge. |
 
-Winners are `LIVE`, `WAREHOUSE`, or `HOLD`. Sources are never averaged. Rule ids: `R-ID-HOLD`, `R-BOOK-LIVE`, `R-BOOK-STALE`, `R-BOOK-CROSSED`, `R-BOOK-ONE-SIDED`, `R-BOOK-DEAD`, `R-TRADE-NEWER`, `R-AGG-WAREHOUSE`, `R-LIFE-WAREHOUSE`.
+Winners are `LIVE`, `WAREHOUSE`, or `HOLD`. `HOLD` is the previous reconciled value for this token. Sources are never averaged.
 
 ## How the planner branches
 
-The loop is always `PLAN` → `TOOL` → `OBSERVE` → `APPLY`. APPLY is `policy.reconcile`. The planner never calls `set_field`.
+`next_action` in `src/asof/plan.py` is a pure function of `Observation`. The loop in `src/asof/agent.py` only executes the action. APPLY is always `policy.reconcile`.
 
-- Warehouse miss on token id → retry `fetch_warehouse(condition_id)`.
-- Identity mismatch → still APPLY; policy records `R-ID-HOLD` on every field. That is a refuse, not a merge.
-- After cycle 1, if live won book prices and the market was not dead → fetch `cycle2_token()` (a closed market). That is a different entity, chosen because the first fight was book-vs-catalogue, not a replay of the same token.
-- Stale live still APPLY. Policy emits `R-BOOK-STALE`. The planner does not pretend live won.
+- No live yet → `fetch_live`.
+- Live present, no warehouse → `warehouse_open`.
+- Warehouse miss → retry the same snapshot pinned to `live.token_id`. Still missing → halt.
+- Both present → apply.
+- After apply: if live won bid/ask and the market was not dead → `warehouse_closed` (same token). **Else halt.**
+- Two applies → halt.
+- Live miss → halt.
 
-Two cycles minimum. Cassette cycle 2 uses a real closed Gamma row plus a documented splice of a real CLOB book shape (`POLICY.md`, `cassettes/README.md`). Closed books are often unrestorable; the splice exists so `R-BOOK-DEAD` is visible.
+## Cassettes
+
+One CLOB book (`cassettes/live.json`). Two Gamma snapshots of that token.
+
+A recapture on 2026-08-14 still had Gamma `bestBid`/`bestAsk`/`lastTradePrice` equal to the book. `warehouse_open.json` lags those three keys and lists them in `_asof_stub`. `warehouse_closed.json` is the same identity with `closed` / `acceptingOrders` overlaid (`_asof_stub`). Not a different market. Not a transplanted book.
+
+Replay rebases live `as_of` to `now - 0.4s` so the 2s SLA is not vacuously stale. `captured_clock=True` uses the JSON timestamp (`R-BOOK-STALE` in unit tests).
 
 ## What I would do next
 

@@ -14,7 +14,7 @@ from asof.types import (
 
 
 def identity_matches(live: LiveBook, warehouse: WarehouseRow) -> bool:
-    if live.token_id != warehouse.token_id and live.token_id not in warehouse.clob_token_ids:
+    if live.token_id != warehouse.token_id:
         return False
     if warehouse.condition_id and live.condition_id != warehouse.condition_id:
         return False
@@ -154,23 +154,21 @@ def reconcile(
         _decision(
             "liquidity", live.top_liquidity, warehouse.liquidity, Winner.WAREHOUSE,
             warehouse.liquidity, "R-AGG-WAREHOUSE",
-            "Catalogue liquidity wins. Top-of-book size is logged as live for the disagreement, not stored as truth.",
+            "Catalogue liquidity wins. Top-of-book size is logged as live, not stored as truth.",
             as_of,
         )
     )
-    live_closed = False if live.quoting else None
-    live_accepting = True if live.quoting else None
     result.decisions.append(
         _decision(
-            "closed", live_closed, warehouse.closed, Winner.WAREHOUSE, warehouse.closed,
+            "closed", None, warehouse.closed, Winner.WAREHOUSE, warehouse.closed,
             "R-LIFE-WAREHOUSE",
-            "Lifecycle is official. A quoting book does not reopen a closed market.",
+            "Lifecycle is official. Live CLOB /book does not carry closed.",
             as_of,
         )
     )
     result.decisions.append(
         _decision(
-            "accepting_orders", live_accepting, warehouse.accepting_orders, Winner.WAREHOUSE,
+            "accepting_orders", None, warehouse.accepting_orders, Winner.WAREHOUSE,
             warehouse.accepting_orders, "R-LIFE-WAREHOUSE",
             "Lifecycle is official. Warehouse acceptingOrders is the halt flag.",
             as_of,
@@ -181,15 +179,15 @@ def reconcile(
 
 def _comparable_fields(live: LiveBook, warehouse: WarehouseRow) -> list[tuple[str, Any, Any]]:
     return [
-        ("best_bid", live.best_bid, warehouse.outcome_price),
-        ("best_ask", live.best_ask, warehouse.outcome_price),
-        ("mid", live.mid, warehouse.outcome_price),
+        ("best_bid", live.best_bid, warehouse.best_bid),
+        ("best_ask", live.best_ask, warehouse.best_ask),
+        ("mid", live.mid, warehouse.mid),
         ("spread", live.spread, None),
-        ("last_trade_price", live.last_trade_price, warehouse.last_trade_price or warehouse.outcome_price),
+        ("last_trade_price", live.last_trade_price, warehouse.last_trade_price),
         ("volume", None, warehouse.volume),
         ("liquidity", live.top_liquidity, warehouse.liquidity),
-        ("closed", False if live.quoting else None, warehouse.closed),
-        ("accepting_orders", True if live.quoting else None, warehouse.accepting_orders),
+        ("closed", None, warehouse.closed),
+        ("accepting_orders", None, warehouse.accepting_orders),
     ]
 
 
@@ -202,7 +200,9 @@ def _book_fields(
 ) -> list[FieldDecision]:
     live_mid = live.mid
     live_spread = live.spread
-    catalogue = warehouse.outcome_price
+    wh_bid = warehouse.best_bid
+    wh_ask = warehouse.best_ask
+    wh_mid = warehouse.mid
 
     if market_dead(warehouse):
         reason = (
@@ -210,13 +210,13 @@ def _book_fields(
             "Do not apply live prices to a dead market."
         )
         return [
-            _decision(name, live_v, catalogue if name != "spread" else None,
+            _decision(name, live_v, wh_v,
                       Winner.HOLD, prev.get(name), "R-BOOK-DEAD", reason, as_of, prev.get(name))
-            for name, live_v in (
-                ("best_bid", live.best_bid),
-                ("best_ask", live.best_ask),
-                ("mid", live_mid),
-                ("spread", live_spread),
+            for name, live_v, wh_v in (
+                ("best_bid", live.best_bid, wh_bid),
+                ("best_ask", live.best_ask, wh_ask),
+                ("mid", live_mid, wh_mid),
+                ("spread", live_spread, None),
             )
         ]
 
@@ -224,57 +224,57 @@ def _book_fields(
         age = book_age_seconds(live, now)
         reason = f"Book age {age:.3f}s exceeds the {FRESH_SLA_SECONDS:.0f}s SLA. Stale live does not get live privileges."
         return [
-            _decision(name, live_v, catalogue if name != "spread" else None,
+            _decision(name, live_v, wh_v,
                       Winner.HOLD, prev.get(name), "R-BOOK-STALE", reason, as_of, prev.get(name))
-            for name, live_v in (
-                ("best_bid", live.best_bid),
-                ("best_ask", live.best_ask),
-                ("mid", live_mid),
-                ("spread", live_spread),
+            for name, live_v, wh_v in (
+                ("best_bid", live.best_bid, wh_bid),
+                ("best_ask", live.best_ask, wh_ask),
+                ("mid", live_mid, wh_mid),
+                ("spread", live_spread, None),
             )
         ]
 
     if is_two_sided(live) and not is_uncrossed(live):
         reason = "Crossed book (bid >= ask). Corrupt, not newer."
         return [
-            _decision(name, live_v, catalogue if name != "spread" else None,
+            _decision(name, live_v, wh_v,
                       Winner.HOLD, prev.get(name), "R-BOOK-CROSSED", reason, as_of, prev.get(name))
-            for name, live_v in (
-                ("best_bid", live.best_bid),
-                ("best_ask", live.best_ask),
-                ("mid", live_mid),
-                ("spread", live_spread),
+            for name, live_v, wh_v in (
+                ("best_bid", live.best_bid, wh_bid),
+                ("best_ask", live.best_ask, wh_ask),
+                ("mid", live_mid, wh_mid),
+                ("spread", live_spread, None),
             )
         ]
 
     out: list[FieldDecision] = []
     two = is_two_sided(live)
     live_reason = (
-        f"Fresh two-sided uncrossed book (age {book_age_seconds(live, now):.3f}s ≤ {FRESH_SLA_SECONDS:.0f}s). "
+        f"Fresh two-sided uncrossed book (age {book_age_seconds(live, now):.3f}s <= {FRESH_SLA_SECONDS:.0f}s). "
         "The book is the market now."
     )
 
-    for name, live_v in (("best_bid", live.best_bid), ("best_ask", live.best_ask)):
+    for name, live_v, wh_v in (("best_bid", live.best_bid, wh_bid), ("best_ask", live.best_ask, wh_ask)):
         if live_v is None:
             out.append(_decision(
-                name, live_v, catalogue, Winner.HOLD, prev.get(name),
+                name, live_v, wh_v, Winner.HOLD, prev.get(name),
                 "R-BOOK-ONE-SIDED", "That side of the book is empty. Do not invent it.",
                 as_of, prev.get(name),
             ))
         else:
             out.append(_decision(
-                name, live_v, catalogue, Winner.LIVE, live_v,
+                name, live_v, wh_v, Winner.LIVE, live_v,
                 "R-BOOK-LIVE", live_reason, as_of,
             ))
 
     if not two:
         one_reason = "Book is one-sided. Do not invent a mid or spread."
-        out.append(_decision("mid", live_mid, catalogue, Winner.HOLD, prev.get("mid"),
+        out.append(_decision("mid", live_mid, wh_mid, Winner.HOLD, prev.get("mid"),
                              "R-BOOK-ONE-SIDED", one_reason, as_of, prev.get("mid")))
         out.append(_decision("spread", live_spread, None, Winner.HOLD, prev.get("spread"),
                              "R-BOOK-ONE-SIDED", one_reason, as_of, prev.get("spread")))
     else:
-        out.append(_decision("mid", live_mid, catalogue, Winner.LIVE, live_mid,
+        out.append(_decision("mid", live_mid, wh_mid, Winner.LIVE, live_mid,
                              "R-BOOK-LIVE", live_reason, as_of))
         out.append(_decision("spread", live_spread, None, Winner.LIVE, live_spread,
                              "R-BOOK-LIVE", live_reason, as_of))
@@ -289,7 +289,7 @@ def _last_trade(
     as_of: datetime,
 ) -> FieldDecision:
     live_px = live.last_trade_price
-    wh_px = warehouse.last_trade_price if warehouse.last_trade_price is not None else warehouse.outcome_price
+    wh_px = warehouse.last_trade_price
     if market_dead(warehouse):
         return _decision(
             "last_trade_price", live_px, wh_px, Winner.HOLD, prev.get("last_trade_price"),

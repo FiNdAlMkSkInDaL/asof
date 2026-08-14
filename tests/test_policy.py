@@ -46,6 +46,8 @@ def warehouse(
     volume: float | None = 1_000.0,
     liquidity: float | None = 5_000.0,
     outcome_price: float | None = 0.50,
+    best_bid: float | None = 0.40,
+    best_ask: float | None = 0.52,
     last_trade_price: float | None = 0.49,
     last_trade_time: datetime | None = None,
 ) -> WarehouseRow:
@@ -57,6 +59,8 @@ def warehouse(
         accepting_orders=accepting_orders,
         volume=volume,
         liquidity=liquidity,
+        best_bid=best_bid,
+        best_ask=best_ask,
         outcome_price=outcome_price,
         last_trade_price=last_trade_price,
         last_trade_time=last_trade_time if last_trade_time is not None else NOW - timedelta(seconds=30),
@@ -77,6 +81,8 @@ def test_r_book_live_fresh_two_sided():
         assert d.rule_id == "R-BOOK-LIVE"
     for name in ("best_bid", "best_ask", "mid"):
         assert r.by_field(name).conflict
+    assert r.by_field("best_bid").warehouse == 0.40
+    assert r.by_field("best_ask").warehouse == 0.52
     assert r.by_field("mid").value == 0.45
     assert abs(r.by_field("spread").value - 0.02) < 1e-12
 
@@ -182,12 +188,21 @@ def test_r_id_hold_condition_mismatch():
     assert all(d.rule_id == "R-ID-HOLD" for d in r.decisions)
 
 
-def test_identity_ok_when_token_in_clob_ids():
+def test_identity_refuse_sibling_token():
     live = book(token_id=OTHER)
     wh = warehouse(token_id=TOKEN, clob_token_ids=(TOKEN, OTHER))
     r = reconcile(live, wh, NOW)
-    assert r.identity_ok is True
-    assert r.by_field("token_id").value == TOKEN
+    assert r.identity_ok is False
+    assert all(d.rule_id == "R-ID-HOLD" for d in r.decisions)
+
+
+def test_closed_live_is_none():
+    r = reconcile(book(), warehouse(closed=True), NOW)
+    d = r.by_field("closed")
+    assert d.live is None
+    assert d.warehouse is True
+    assert d.conflict is False
+    assert d.winner is Winner.WAREHOUSE
 
 
 def test_no_averaging_mid():
