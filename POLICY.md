@@ -9,7 +9,7 @@ The planner may fetch, retry, and choose the next snapshot from observations. It
 
 Freshness SLA: a book is live-privileged only if `now - book.as_of ≤ 2` seconds.
 
-Cassette replay rebases live `as_of` to `now - 0.4s` so the demo is not vacuously stale. The captured CLOB timestamp is still in the JSON. A planner action / unit test may request `captured_clock=True` to exercise `R-BOOK-STALE`. That rebase is not a claim that the book is 0.4s old in the real world.
+Cassette replay rebases live `as_of` to `now - 0.4s` so the demo is not vacuously stale. The captured CLOB timestamp is still in the JSON. Unit tests may pass `captured_clock=True` to exercise `R-BOOK-STALE`. The default demo does not. That rebase is not a claim that the book is 0.4s old in the real world.
 
 ## Field table
 
@@ -17,7 +17,7 @@ Cassette replay rebases live `as_of` to `now - 0.4s` so the demo is not vacuousl
 | --- | --- | --- | --- |
 | `token_id`, `condition_id` | `WAREHOUSE` if identity matches; else `HOLD` | `R-LIFE-WAREHOUSE` / `R-ID-HOLD` | Canonical keys come from the catalogue. Identity is `live.token_id == warehouse.token_id` after the outcome is resolved. Sibling clob token ids are not a merge key. |
 | `best_bid`, `best_ask` | `LIVE` if the book is fresh, that side exists, uncrossed, and the market is not dead; else `HOLD` | `R-BOOK-LIVE` / `R-BOOK-STALE` / `R-BOOK-CROSSED` / `R-BOOK-ONE-SIDED` / `R-BOOK-DEAD` | Compared to warehouse `bestBid` / `bestAsk`. A lagged catalogue bid is still a bid. Gamma `outcomePrice` is not a bid. |
-| `mid`, `spread` | `LIVE` only when the book is fresh, two-sided, and uncrossed; else `HOLD` | `R-BOOK-LIVE` / `R-BOOK-ONE-SIDED` / `R-BOOK-STALE` / `R-BOOK-CROSSED` / `R-BOOK-DEAD` | Derived from the live book. Warehouse mid, if both catalogue bid and ask exist, is context only — never invented from `outcomePrice`. |
+| `mid`, `spread` | `LIVE` only when the book is fresh, two-sided, and uncrossed; else `HOLD` | `R-BOOK-LIVE` / `R-BOOK-ONE-SIDED` / `R-BOOK-STALE` / `R-BOOK-CROSSED` / `R-BOOK-DEAD` | Derived from the live book. Logged for context; disagreement is not counted as a conflict (they are functions of bid/ask). Warehouse mid, if both catalogue bid and ask exist, is context only — never invented from `outcomePrice`. |
 | `last_trade_price` | Newer timestamp wins. If the market is dead, `HOLD`. If there is no timestamp pair and live is not fresh, `HOLD`. If there is no timestamp pair and live is fresh, live wins. | `R-TRADE-NEWER` / `R-BOOK-DEAD` / `R-BOOK-STALE` | Compared to warehouse `lastTradePrice`. Recency is the meaning of the field. Cassette payloads often have prices and no trade clocks; the timestamp branch is proven in `tests/test_policy.py`. |
 | `volume`, `liquidity` | `WAREHOUSE` | `R-AGG-WAREHOUSE` | Aggregates are not top-of-book size. Top-of-book size may be logged as live. It is not a like-for-like disagreement with catalogue liquidity. |
 | `closed`, `accepting_orders` | `WAREHOUSE` | `R-LIFE-WAREHOUSE` | Lifecycle is official. Live is `None` unless the live payload actually carries those keys. A missing live side is not a two-source conflict. |
@@ -48,7 +48,7 @@ Cassette replay rebases live `as_of` to `now - 0.4s` so the demo is not vacuousl
 
 Both warehouse snapshots are the same outcome token as `cassettes/live.json`.
 
-- `warehouse_open.json` is a captured Gamma row. Where the live catalogue bid/ask/last trade still matched the CLOB book, those like-for-like keys are lagged and listed in `_asof_stub`. The rest of the row is unmodified capture.
-- `warehouse_closed.json` is that same identity with `closed: true` and `acceptingOrders: false`, listed in `_asof_stub`. It is not a different market and not a transplanted book.
+- `warehouse_open.json` is a captured Gamma row. `bestBid` / `bestAsk` are lagged (`_asof_stub`) because later wire BBO matched the book. Capture-time `lastTradePrice` was `0.17` against CLOB last trade `0.169`; that tick is kept, not stubbed. The rest of the row is unmodified capture.
+- `warehouse_closed.json` is that same identity with `closed: true` and `acceptingOrders: false`, listed in `_asof_stub`. Cycle 2 proof is HOLD of the previous live bid, not a new price fight. It is not a different market and not a transplanted book.
 
 See `cassettes/README.md`.

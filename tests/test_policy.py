@@ -86,8 +86,10 @@ def test_r_book_live_fresh_two_sided():
         d = r.by_field(name)
         assert d.winner is Winner.LIVE
         assert d.rule_id == "R-BOOK-LIVE"
-    for name in ("best_bid", "best_ask", "mid"):
+    for name in ("best_bid", "best_ask"):
         assert r.by_field(name).conflict
+    assert r.by_field("mid").conflict is False
+    assert r.by_field("spread").conflict is False
     assert r.by_field("best_bid").warehouse == 0.40
     assert r.by_field("best_ask").warehouse == 0.52
     assert r.by_field("mid").value == 0.45
@@ -220,6 +222,14 @@ def test_closed_live_is_none():
     assert d.warehouse is True
     assert d.conflict is False
     assert d.winner is Winner.WAREHOUSE
+
+
+def test_mid_spread_not_counted_as_conflict():
+    r = reconcile(book(), warehouse(), NOW)
+    assert r.by_field("mid").winner is Winner.LIVE
+    assert r.by_field("mid").conflict is False
+    assert r.by_field("spread").conflict is False
+    assert r.by_field("best_bid").conflict is True
 
 
 def test_no_averaging_mid():

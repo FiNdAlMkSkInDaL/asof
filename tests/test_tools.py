@@ -32,7 +32,11 @@ def test_parse_open_gamma_like_for_like():
     assert row.accepting_orders is True
     assert row.best_bid == 0.15
     assert row.best_ask == 0.16
-    assert row.last_trade_price == 0.155
+    assert row.last_trade_price == 0.17
+    stub = raw["_asof_stub"]
+    assert stub["keys"] == ["bestBid", "bestAsk"]
+    assert "lastTradePrice" not in stub["stubbed"]
+    assert stub["captured"]["lastTradePrice"] == 0.17
 
 
 def test_open_disagrees_on_three_like_for_like_fields():
@@ -57,6 +61,10 @@ def test_closed_snapshot_same_token():
     assert closed.condition_id == live.condition_id
     assert closed.closed is True
     assert closed.accepting_orders is False
+    stub = json.loads((CASSETTES / "warehouse_closed.json").read_text(encoding="utf-8"))["_asof_stub"]
+    assert stub["keys"] == ["bestBid", "bestAsk", "closed", "acceptingOrders"]
+    assert "lastTradePrice" not in stub.get("stubbed", {})
+    assert closed.last_trade_price == 0.17
 
 
 def test_condition_lookup_keeps_live_token():

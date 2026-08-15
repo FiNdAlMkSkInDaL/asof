@@ -69,6 +69,8 @@ def _decision(
 ) -> FieldDecision:
     if winner is Winner.HOLD and value is None:
         value = previous
+    # Mid/spread are functions of bid/ask; log them, do not count a second fight.
+    conflict = False if field in {"mid", "spread"} else _conflict(live, warehouse)
     return FieldDecision(
         field=field,
         live=live,
@@ -78,7 +80,7 @@ def _decision(
         rule_id=rule_id,
         reason=reason,
         as_of=as_of,
-        conflict=_conflict(live, warehouse),
+        conflict=conflict,
     )
 
 

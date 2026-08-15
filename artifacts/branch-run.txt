@@ -1,0 +1,24 @@
+Dead cycle-1 halt (same path as tests/test_agent.py::_AlwaysClosed). Not the default python -m asof demo.
+
+asof -- planner fetches; policy writes
+
+C1 PLAN    Fetch the live book for token 54533043819946592547517511176940999955633860128497669742211153063842200957669.
+C1 TOOL    fetch_live(54533043819946592547517511176940999955633860128497669742211153063842200957669)
+C1 OBSERVE book bid=0.169 ask=0.17 mid=0.1695 quoting=True top=1.932e+04
+C1 PLAN    Fetch warehouse snapshot 'open' for token 54533043819946592547517511176940999955633860128497669742211153063842200957669.
+C1 TOOL    fetch_warehouse(54533043819946592547517511176940999955633860128497669742211153063842200957669, open)
+C1 OBSERVE catalogue closed=True accepting=False bid=0.15 ask=0.16 last=0.17
+C1 OBSERVE same-entity=True; live bid=0.169 ask=0.17 vs wh bid=0.15 ask=0.16; warehouse closed=True accepting=False
+C1 APPLY   identity_ok | best_bid=HOLD/R-BOOK-DEAD conflict; best_ask=HOLD/R-BOOK-DEAD conflict; last_trade_price=HOLD/R-BOOK-DEAD conflict; closed=WAREHOUSE/R-LIFE-WAREHOUSE; accepting_orders=WAREHOUSE/R-LIFE-WAREHOUSE
+         token_id           WAREHOUSE  R-LIFE-WAREHOUSE live=54533043819946592547517511176940999955633860128497669742211153063842200957669  wh=54533043819946592547517511176940999955633860128497669742211153063842200957669  -> 54533043819946592547517511176940999955633860128497669742211153063842200957669
+         condition_id       WAREHOUSE  R-LIFE-WAREHOUSE live=0x0f49db97f71c68b1e42a6d16e3de93d85dbf7d4148e3f018eb79e88554be9f75  wh=0x0f49db97f71c68b1e42a6d16e3de93d85dbf7d4148e3f018eb79e88554be9f75  -> 0x0f49db97f71c68b1e42a6d16e3de93d85dbf7d4148e3f018eb79e88554be9f75
+         best_bid           HOLD       R-BOOK-DEAD      live=     0.169  wh=      0.15  -> -  conflict
+         best_ask           HOLD       R-BOOK-DEAD      live=      0.17  wh=      0.16  -> -  conflict
+         mid                HOLD       R-BOOK-DEAD      live=    0.1695  wh=     0.155  -> -
+         spread             HOLD       R-BOOK-DEAD      live=     0.001  wh=         -  -> -
+         last_trade_price   HOLD       R-BOOK-DEAD      live=     0.169  wh=      0.17  -> -  conflict
+         volume             WAREHOUSE  R-AGG-WAREHOUSE  live=         -  wh= 2.669e+07  -> 2.669e+07
+         liquidity          WAREHOUSE  R-AGG-WAREHOUSE  live=         -  wh= 3.429e+05  -> 3.429e+05
+         closed             WAREHOUSE  R-LIFE-WAREHOUSE live=         -  wh=      True  -> True
+         accepting_orders   WAREHOUSE  R-LIFE-WAREHOUSE live=         -  wh=     False  -> False
+C2 PLAN    Cycle 1 was already dead. Do not fetch a closed overlay. Halt.

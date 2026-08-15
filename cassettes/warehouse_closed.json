@@ -140,7 +140,7 @@
   "oneWeekPriceChange": -0.013,
   "oneMonthPriceChange": -0.028,
   "oneYearPriceChange": -0.0155,
-  "lastTradePrice": 0.155,
+  "lastTradePrice": 0.17,
   "bestBid": 0.15,
   "bestAsk": 0.16,
   "automaticallyActive": true,
@@ -167,11 +167,10 @@
   },
   "version": "v1",
   "_asof_stub": {
-    "note": "Same identity as warehouse_open.json and live.json. Inherits the lagged price keys from warehouse_open. closed and acceptingOrders overlaid so cycle 2 can show R-BOOK-DEAD and HOLD of cycle-1 live prices. Not a different market and not a transplanted book.",
+    "note": "Same identity as warehouse_open.json and live.json. Inherits lagged bestBid/bestAsk from warehouse_open. lastTradePrice is the captured 0.17, not stubbed. closed and acceptingOrders overlaid so cycle 2 can HOLD cycle-1 live prices. Not a different market and not a transplanted book.",
     "keys": [
       "bestBid",
       "bestAsk",
-      "lastTradePrice",
       "closed",
       "acceptingOrders"
     ],

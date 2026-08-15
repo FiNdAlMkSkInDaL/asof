@@ -140,7 +140,7 @@
   "oneWeekPriceChange": -0.013,
   "oneMonthPriceChange": -0.028,
   "oneYearPriceChange": -0.0155,
-  "lastTradePrice": 0.155,
+  "lastTradePrice": 0.17,
   "bestBid": 0.15,
   "bestAsk": 0.16,
   "automaticallyActive": true,
@@ -167,11 +167,10 @@
   },
   "version": "v1",
   "_asof_stub": {
-    "note": "Captured Gamma row for the same token as live.json. bestBid, bestAsk, and lastTradePrice were lagged so like-for-like fields disagree with the CLOB book. The rest of the row is unmodified capture. On 2026-08-14 live CLOB and Gamma agreed on bid/ask/last (see recapture).",
+    "note": "Captured Gamma row for the same token as live.json. bestBid and bestAsk were lagged because later wire BBO agreed with the CLOB book. Capture-time lastTradePrice 0.17 already differed from CLOB last_trade_price 0.169 and is kept. Recapture last trade matched the book (0.169).",
     "keys": [
       "bestBid",
-      "bestAsk",
-      "lastTradePrice"
+      "bestAsk"
     ],
     "captured": {
       "bestBid": 0.169,
@@ -186,8 +185,7 @@
     },
     "stubbed": {
       "bestBid": 0.15,
-      "bestAsk": 0.16,
-      "lastTradePrice": 0.155
+      "bestAsk": 0.16
     }
   }
 }
