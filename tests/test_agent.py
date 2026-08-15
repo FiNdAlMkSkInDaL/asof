@@ -5,7 +5,7 @@ from pathlib import Path
 
 from asof.agent import Agent
 from asof.store import Store
-from asof.tools import CassetteSource
+from asof.tools import CassetteSource, DeadOpenSource
 from asof.types import LiveBook, WarehouseRow, Winner
 
 NOW = datetime(2026, 8, 13, 18, 0, 0, tzinfo=timezone.utc)
@@ -76,26 +76,9 @@ def test_warehouse_miss_retries_pinned(tmp_path: Path):
     store.close()
 
 
-class _AlwaysClosed:
-    def __init__(self, inner: CassetteSource) -> None:
-        self.inner = inner
-
-    def primary_token(self) -> str:
-        return self.inner.primary_token()
-
-    def available_snapshots(self) -> frozenset[str]:
-        return self.inner.available_snapshots()
-
-    def fetch_live(self, token_id: str, *, captured_clock: bool = False) -> LiveBook | None:
-        return self.inner.fetch_live(token_id, captured_clock=captured_clock)
-
-    def fetch_warehouse(self, token_id: str, snapshot: str) -> WarehouseRow | None:
-        return self.inner.fetch_warehouse(token_id, "closed")
-
-
 def test_dead_cycle1_does_not_run_second_snapshot(tmp_path: Path):
     store = Store(tmp_path / "asof.sqlite")
-    src = _AlwaysClosed(CassetteSource(CASSETTES, NOW))
+    src = DeadOpenSource(CassetteSource(CASSETTES, NOW))
     agent = Agent(src, store, NOW)
     agent.run()
     assert len(agent.results) == 1

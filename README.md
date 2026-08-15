@@ -18,6 +18,7 @@ Then:
 python -m asof query 54533043819946592547517511176940999955633860128497669742211153063842200957669
 python -m asof explain 54533043819946592547517511176940999955633860128497669742211153063842200957669.best_bid
 python -m asof explain 54533043819946592547517511176940999955633860128497669742211153063842200957669.closed
+python -m asof demo --dead-cycle1
 ```
 
 `explain` is the **latest** cycle. After this demo, `best_bid` is HOLD `0.169` / `R-BOOK-DEAD` (cycle 2), not cycle-1 LIVE.
@@ -35,12 +36,12 @@ python -m asof demo --live --token <clob_token_id>
 | Requirement | Where it is |
 | --- | --- |
 | Agent fetches from two independent sources (live feed and warehouse snapshot) | Live: CLOB `GET /book`. Warehouse: Gamma `GET /markets`. Parsers and sources in `src/asof/tools.py`. |
-| Detect disagreements on at least three fields | Cassette cycle 1 like-for-like: `best_bid` and `best_ask` (lagged in `_asof_stub` because later wire BBO agreed) plus `last_trade_price` (capture-time tick: CLOB `0.169` vs Gamma `0.17`). See Cassettes below. Catalogue `outcomePrice` is not a bid. |
+| Detect disagreements on at least three fields | Cycle 1 APPLY: lagged `best_bid`/`best_ask` (`_asof_stub`, because later wire BBO agreed) plus capture-time `last_trade_price` (CLOB `0.169` vs Gamma `0.17`). Catalogue `outcomePrice` is not a bid. Cycle 2 reprints that same lag under HOLD — not a new observation. |
 | Documented conflict policy, chosen and justified | `POLICY.md`. Applied only by `src/asof/policy.py`. |
-| At least two full reconciliation cycles, conflicts in each | `python -m asof demo` (cassettes). Same token. Cycle 1: live wins lagged bid/ask; last trade is the capture tick. Cycle 2 proof is HOLD of cycle-1 live `best_bid` `0.169` (`R-BOOK-DEAD`), not a new price fight. Live `closed` is `None`. `--live` is one network cycle. |
+| At least two full reconciliation cycles, conflicts in each | Two APPLY cycles on the same token. What we actually have: one stubbed book, one last-trade tick, one closed overlay. Cycle 2’s new warehouse fact is `closed: true`. Bid/ask `conflict` flags on C2 are the inherited `_asof_stub` lag. Policy does not treat missing live `closed` as a two-source fight. `--live` is one network cycle. |
 | Logs that say which source won and why | Printed `PLAN` / `TOOL` / `OBSERVE` / `APPLY` loop; each APPLY line has winner + rule id. |
 | Queryable / explainable reconciled state | SQLite in `src/asof/store.py`. `python -m asof query TOKEN`, `python -m asof explain TOKEN.field`. |
-| Agent plans next steps from observations, not a fixed sequence | Pure `next_action(obs)` in `src/asof/plan.py`. Miss/dead/open-only **halts are unit-tested** (`tests/test_agent.py`; `artifacts/branch-run.txt` is the dead-cycle-1 halt). The default `python -m asof demo` cassette path is always live-win then closed overlay. |
+| Agent plans next steps from observations, not a fixed sequence | Pure `next_action(obs)` in `src/asof/plan.py`. Default `python -m asof demo` is live-win then closed overlay. `python -m asof demo --dead-cycle1` serves the closed row on the open fetch so cycle 1 is dead and the planner **halts** (same adapter as `tests/test_agent.py`). Writes `artifacts/branch-run.txt`; does not overwrite `demo-run.txt`. |
 | Public repo + how to run + what I would do next | This file. |
 
 ## Authority
@@ -78,7 +79,7 @@ On 2026-08-14 (and 2026-08-15) live CLOB `/book` and Gamma `/markets` for this t
 
 Replay rebases live `as_of` to `now - 0.4s` so the 2s SLA is not vacuously stale. Unit tests may pass `captured_clock=True`. Cassette last-trade rows have prices and no trade clocks; that APPLY is `R-TRADE-LIVE-NOCLOCK`, not recency.
 
-A reviewer who wants the dead-cycle-1 halt without reading tests can cat `artifacts/branch-run.txt`.
+`python -m asof demo --dead-cycle1` is the halt path. It uses `DeadOpenSource` (closed cassette row on the `open` fetch). Do not cat a frozen transcript in place of running it.
 
 ## What I would do next
 

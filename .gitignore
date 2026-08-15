@@ -5,6 +5,8 @@ __pycache__/
 .venv/
 venv/
 artifacts/asof.sqlite
+artifacts/branch.sqlite
 artifacts/cycle*.json
 artifacts/cycles.json
 artifacts/live-run.txt
+_record/

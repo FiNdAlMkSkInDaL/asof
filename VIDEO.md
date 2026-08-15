@@ -1,17 +1,19 @@
-# Video shot list (~3:00)
+# Video shot list (≤3:00)
 
-Screen recording. No polish. Repo open, terminal visible.
+Screen recording of a real PowerShell / Windows Terminal session in this repo. No studio. No `--live`. Silent; yellow lines are the walkthrough. No fake `PS>` prompts. No `_record/print_slice.py`. No `Get-Content` of a halt transcript.
 
-Token (copy-paste, no angle brackets):
+File: local screen recording (not in git). **~81s**, silent. Windows Terminal, not a studio.
+
+Token:
 
 `54533043819946592547517511176940999955633860128497669742211153063842200957669`
 
 | Time | Shot |
 | --- | --- |
-| 0:00–0:20 | Problem. One token, two sources: CLOB book vs Gamma row. Same entity, two warehouse snapshots of that token. The planner fetches; the policy writes. |
-| 0:20–1:00 | `POLICY.md` table. Point at: bid/ask compared to catalogue `bestBid`/`bestAsk`, not `outcomePrice`. Warehouse wins `closed`. Dead market → HOLD last live prices. No averaging. |
-| 1:00–1:50 | `python -m asof demo`. Pause on cycle 1 APPLY: `best_bid` `LIVE` / `R-BOOK-LIVE` **conflict** (0.169 vs 0.15). Say: bid/ask are a labelled lag because later wire BBO agreed. Last trade on capture was already `0.169` vs `0.17`; the id is `R-TRADE-LIVE-NOCLOCK` (no trade clocks, not recency). Replay rebases `as_of`. |
-| 1:50–2:40 | Same token, cycle 2. Closed overlay is labelled. Proof is `best_bid` HOLD **0.169** (`R-BOOK-DEAD`), not a new price fight. Live `closed` is `-`. `closed` WAREHOUSE true. |
-| 2:40–3:00 | `python -m asof explain 54533043819946592547517511176940999955633860128497669742211153063842200957669.best_bid` then the same for `.closed`. Say once: explain is the **latest** cycle, so bid shows HOLD not LIVE. Stop. |
+| 0:00–0:06 | Cassette replay, no network. On screen: one stubbed book, one last-trade tick, one closed overlay. |
+| 0:06–0:14 | POLICY table: bid/ask vs `bestBid`/`bestAsk` not `outcomePrice`; warehouse owns `closed`; dead HOLDs; never average. |
+| 0:14–0:39 | `_asof_stub` dump **left on screen** through `python -m asof demo` (argv visible, then `ran: python -m asof demo`). Clock rebase said before C1 APPLY. C1: stub 0.15/0.16 vs live. C2: HOLD 0.169 / `R-BOOK-DEAD`, same BBO, not a second observation. |
+| 0:39–0:57 | argv then `explain TOKEN.best_bid`, `explain TOKEN.closed`, `query`. Latest cycle = HOLD. `ran:` lines at the bottom. |
+| 0:57–1:21 | argv `python -m asof demo --dead-cycle1`, then the halt transcript, then `ran: python -m asof demo --dead-cycle1`. Stop. |
 
-Do not explain `.mid`. Do not run `--live` in the recording. If you already did, run `python -m asof demo` again so `artifacts/demo-run.txt` matches this shot list.
+Do not explain `.mid`. Do not run `--live`. Do not cat `artifacts/branch-run.txt`.

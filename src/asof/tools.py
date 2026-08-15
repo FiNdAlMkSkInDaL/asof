@@ -196,6 +196,29 @@ class CassetteSource:
         return parse_gamma(raw, token_id=pin)
 
 
+class DeadOpenSource:
+    """Serve the closed cassette row even when the planner asks for snapshot 'open'.
+
+    Cycle 1 is then dead (`R-BOOK-DEAD`); `next_action` must halt instead of fetching a
+    second overlay. This is the same adapter the dead-cycle-1 unit test uses.
+    """
+
+    def __init__(self, inner: CassetteSource) -> None:
+        self.inner = inner
+
+    def primary_token(self) -> str:
+        return self.inner.primary_token()
+
+    def available_snapshots(self) -> frozenset[str]:
+        return self.inner.available_snapshots()
+
+    def fetch_live(self, token_id: str, *, captured_clock: bool = False) -> LiveBook | None:
+        return self.inner.fetch_live(token_id, captured_clock=captured_clock)
+
+    def fetch_warehouse(self, token_id: str, snapshot: str) -> WarehouseRow | None:
+        return self.inner.fetch_warehouse(token_id, "closed")
+
+
 class LiveSource:
     """One honest network cycle. snapshot='closed' returns None; we will not splice a dead book."""
 

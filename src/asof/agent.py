@@ -243,9 +243,12 @@ def write_artifacts(
     directory: Path,
     *,
     transcript_name: str = "demo-run.txt",
+    write_cycles: bool = True,
 ) -> None:
     directory.mkdir(parents=True, exist_ok=True)
     (directory / transcript_name).write_text(render_transcript(steps), encoding="utf-8")
+    if not write_cycles:
+        return
     payload = []
     for i, result in enumerate(results, start=1):
         entry = {

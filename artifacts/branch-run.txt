@@ -1,5 +1,3 @@
-Dead cycle-1 halt (same path as tests/test_agent.py::_AlwaysClosed). Not the default python -m asof demo.
-
 asof -- planner fetches; policy writes
 
 C1 PLAN    Fetch the live book for token 54533043819946592547517511176940999955633860128497669742211153063842200957669.
