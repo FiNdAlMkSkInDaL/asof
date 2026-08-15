@@ -7,14 +7,14 @@ C1 PLAN    Fetch warehouse snapshot 'open' for token 545330438199465925475175111
 C1 TOOL    fetch_warehouse(54533043819946592547517511176940999955633860128497669742211153063842200957669, open)
 C1 OBSERVE catalogue closed=False accepting=True bid=0.15 ask=0.16 last=0.17
 C1 OBSERVE same-entity=True; live bid=0.169 ask=0.17 vs wh bid=0.15 ask=0.16; warehouse closed=False accepting=True
-C1 APPLY   identity_ok | best_bid=LIVE/R-BOOK-LIVE conflict; best_ask=LIVE/R-BOOK-LIVE conflict; last_trade_price=LIVE/R-TRADE-NEWER conflict; closed=WAREHOUSE/R-LIFE-WAREHOUSE; accepting_orders=WAREHOUSE/R-LIFE-WAREHOUSE
+C1 APPLY   identity_ok | best_bid=LIVE/R-BOOK-LIVE conflict; best_ask=LIVE/R-BOOK-LIVE conflict; last_trade_price=LIVE/R-TRADE-LIVE-NOCLOCK conflict; closed=WAREHOUSE/R-LIFE-WAREHOUSE; accepting_orders=WAREHOUSE/R-LIFE-WAREHOUSE
          token_id           WAREHOUSE  R-LIFE-WAREHOUSE live=54533043819946592547517511176940999955633860128497669742211153063842200957669  wh=54533043819946592547517511176940999955633860128497669742211153063842200957669  -> 54533043819946592547517511176940999955633860128497669742211153063842200957669
          condition_id       WAREHOUSE  R-LIFE-WAREHOUSE live=0x0f49db97f71c68b1e42a6d16e3de93d85dbf7d4148e3f018eb79e88554be9f75  wh=0x0f49db97f71c68b1e42a6d16e3de93d85dbf7d4148e3f018eb79e88554be9f75  -> 0x0f49db97f71c68b1e42a6d16e3de93d85dbf7d4148e3f018eb79e88554be9f75
          best_bid           LIVE       R-BOOK-LIVE      live=     0.169  wh=      0.15  -> 0.169  conflict
          best_ask           LIVE       R-BOOK-LIVE      live=      0.17  wh=      0.16  -> 0.17  conflict
          mid                LIVE       R-BOOK-LIVE      live=    0.1695  wh=     0.155  -> 0.1695
          spread             LIVE       R-BOOK-LIVE      live=     0.001  wh=         -  -> 0.001
-         last_trade_price   LIVE       R-TRADE-NEWER    live=     0.169  wh=      0.17  -> 0.169  conflict
+         last_trade_price   LIVE       R-TRADE-LIVE-NOCLOCK live=     0.169  wh=      0.17  -> 0.169  conflict
          volume             WAREHOUSE  R-AGG-WAREHOUSE  live=         -  wh= 2.669e+07  -> 2.669e+07
          liquidity          WAREHOUSE  R-AGG-WAREHOUSE  live=         -  wh= 3.429e+05  -> 3.429e+05
          closed             WAREHOUSE  R-LIFE-WAREHOUSE live=         -  wh=     False  -> False

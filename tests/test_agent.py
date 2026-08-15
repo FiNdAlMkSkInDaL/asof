@@ -34,7 +34,7 @@ def test_two_applies_one_token_hold(tmp_path: Path):
     apply_lines = [s.message for s in steps if s.kind == "APPLY"]
     assert apply_lines
     assert "best_bid=LIVE/R-BOOK-LIVE conflict" in apply_lines[0]
-    assert "last_trade_price=LIVE/R-TRADE-NEWER conflict" in apply_lines[0]
+    assert "last_trade_price=LIVE/R-TRADE-LIVE-NOCLOCK conflict" in apply_lines[0]
     assert "liquidity" not in apply_lines[0]
     assert "mid=" not in apply_lines[0]
     kinds = [s.kind for s in steps]

@@ -20,6 +20,8 @@ python -m asof explain 545330438199465925475175111769409999556338601284976697422
 python -m asof explain 54533043819946592547517511176940999955633860128497669742211153063842200957669.closed
 ```
 
+`explain` is the **latest** cycle. After this demo, `best_bid` is HOLD `0.169` / `R-BOOK-DEAD` (cycle 2), not cycle-1 LIVE.
+
 Optional live run (public Polymarket HTTP, no keys). One network cycle on the **Yes** token from the cassette. Gamma `bestBid`/`bestAsk` are market-level (the Yes book). Writes `artifacts/live-run.txt`; does not overwrite the committed cassette transcript. Typically **no** bid/ask fights — that is why those two catalogue keys are lagged. Capture-time last trade already differed by one tick (kept).
 
 ```bash
@@ -49,7 +51,7 @@ python -m asof demo --live --token <clob_token_id>
 | Mid, spread | Live, only when the book is fresh, two-sided, and uncrossed | Derived from the live book. Not from Gamma `outcomePrice`. Not counted as a conflict. |
 | Volume, liquidity | Warehouse | Aggregates are not top-of-book size. |
 | `closed`, `accepting_orders` | Warehouse | Lifecycle is official. Live CLOB `/book` does not carry these keys (live side is `None`). |
-| Last trade | Newer timestamp; HOLD if the market is dead; fresh live if no clocks | Compared to warehouse `lastTradePrice`. |
+| Last trade | Newer timestamp; HOLD if the market is dead; fresh live if no clocks (`R-TRADE-LIVE-NOCLOCK`, not recency) | Compared to warehouse `lastTradePrice`. |
 | Identity mismatch | HOLD everything (`R-ID-HOLD`) | `live.token_id` must equal `warehouse.token_id`. Sibling Yes/No tokens do not merge. |
 
 Winners are `LIVE`, `WAREHOUSE`, or `HOLD`. `HOLD` is the previous reconciled value for this token. Sources are never averaged.
@@ -74,7 +76,7 @@ One CLOB book (`cassettes/live.json`). Two Gamma snapshots of that **same** Yes 
 
 On 2026-08-14 (and 2026-08-15) live CLOB `/book` and Gamma `/markets` for this token **agreed** on bid/ask (and recapture last trade matched the book). A `--live` run therefore shows no bid/ask fights. `warehouse_open.json` lags `bestBid` / `bestAsk` (`_asof_stub`) so those rules can be shown. Capture-time last trade already differed: CLOB `0.169` vs Gamma `0.17`; that captured Gamma value is kept. `warehouse_closed.json` is the same identity with `closed` / `acceptingOrders` overlaid (`_asof_stub`, including inherited lagged bid/ask). Cycle 2’s new fact is that overlay. The second-cycle proof is HOLD of cycle-1 live `best_bid` `0.169`, not a second price observation. Live `closed` is `None`. Not a different market. Not a transplanted book.
 
-Replay rebases live `as_of` to `now - 0.4s` so the 2s SLA is not vacuously stale. Unit tests may pass `captured_clock=True`. Cassette last-trade rows have prices and no trade clocks; `R-TRADE-NEWER` then means “fresh live, no timestamp pair,” which the APPLY reason states.
+Replay rebases live `as_of` to `now - 0.4s` so the 2s SLA is not vacuously stale. Unit tests may pass `captured_clock=True`. Cassette last-trade rows have prices and no trade clocks; that APPLY is `R-TRADE-LIVE-NOCLOCK`, not recency.
 
 A reviewer who wants the dead-cycle-1 halt without reading tests can cat `artifacts/branch-run.txt`.
 

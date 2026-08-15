@@ -314,7 +314,7 @@ def _last_trade(
     if is_fresh(live, now) and live_px is not None:
         return _decision(
             "last_trade_price", live_px, wh_px, Winner.LIVE, live_px,
-            "R-TRADE-NEWER",
+            "R-TRADE-LIVE-NOCLOCK",
             "No trade timestamps on either side. Fresh live last-trade price wins; this is not a recency comparison.",
             as_of,
         )

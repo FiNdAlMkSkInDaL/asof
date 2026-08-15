@@ -156,7 +156,7 @@ def test_r_trade_newer_no_clocks_fresh_live():
     wh = warehouse(last_trade_time=None)
     d = reconcile(live, wh, NOW).by_field("last_trade_price")
     assert d.winner is Winner.LIVE
-    assert d.rule_id == "R-TRADE-NEWER"
+    assert d.rule_id == "R-TRADE-LIVE-NOCLOCK"
     assert "not a recency comparison" in d.reason
 
 

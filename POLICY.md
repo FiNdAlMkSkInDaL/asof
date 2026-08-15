@@ -18,7 +18,7 @@ Cassette replay rebases live `as_of` to `now - 0.4s` so the demo is not vacuousl
 | `token_id`, `condition_id` | `WAREHOUSE` if identity matches; else `HOLD` | `R-LIFE-WAREHOUSE` / `R-ID-HOLD` | Canonical keys come from the catalogue. Identity is `live.token_id == warehouse.token_id` after the outcome is resolved. Sibling clob token ids are not a merge key. |
 | `best_bid`, `best_ask` | `LIVE` if the book is fresh, that side exists, uncrossed, and the market is not dead; else `HOLD` | `R-BOOK-LIVE` / `R-BOOK-STALE` / `R-BOOK-CROSSED` / `R-BOOK-ONE-SIDED` / `R-BOOK-DEAD` | Compared to warehouse `bestBid` / `bestAsk`. A lagged catalogue bid is still a bid. Gamma `outcomePrice` is not a bid. |
 | `mid`, `spread` | `LIVE` only when the book is fresh, two-sided, and uncrossed; else `HOLD` | `R-BOOK-LIVE` / `R-BOOK-ONE-SIDED` / `R-BOOK-STALE` / `R-BOOK-CROSSED` / `R-BOOK-DEAD` | Derived from the live book. Logged for context; disagreement is not counted as a conflict (they are functions of bid/ask). Warehouse mid, if both catalogue bid and ask exist, is context only — never invented from `outcomePrice`. |
-| `last_trade_price` | Newer timestamp wins. If the market is dead, `HOLD`. If there is no timestamp pair and live is not fresh, `HOLD`. If there is no timestamp pair and live is fresh, live wins. | `R-TRADE-NEWER` / `R-BOOK-DEAD` / `R-BOOK-STALE` | Compared to warehouse `lastTradePrice`. Recency is the meaning of the field. Cassette payloads often have prices and no trade clocks; the timestamp branch is proven in `tests/test_policy.py`. |
+| `last_trade_price` | Newer timestamp wins. If the market is dead, `HOLD`. If there is no timestamp pair and live is not fresh, `HOLD`. If there is no timestamp pair and live is fresh, live wins. | `R-TRADE-NEWER` / `R-TRADE-LIVE-NOCLOCK` / `R-BOOK-DEAD` / `R-BOOK-STALE` | Compared to warehouse `lastTradePrice`. Recency is the meaning of the field when both sides have clocks. Cassette payloads have prices and no trade clocks; that branch is `R-TRADE-LIVE-NOCLOCK`, proven also in `tests/test_policy.py`. |
 | `volume`, `liquidity` | `WAREHOUSE` | `R-AGG-WAREHOUSE` | Aggregates are not top-of-book size. Top-of-book size may be logged as live. It is not a like-for-like disagreement with catalogue liquidity. |
 | `closed`, `accepting_orders` | `WAREHOUSE` | `R-LIFE-WAREHOUSE` | Lifecycle is official. Live is `None` unless the live payload actually carries those keys. A missing live side is not a two-source conflict. |
 
@@ -34,7 +34,8 @@ Cassette replay rebases live `as_of` to `now - 0.4s` so the demo is not vacuousl
 | `R-BOOK-CROSSED` | `best_bid >= best_ask`. Corrupt, not newer. |
 | `R-BOOK-ONE-SIDED` | Missing bid or ask. Do not invent that side, mid, or spread. |
 | `R-BOOK-DEAD` | Warehouse `closed` is true or `accepting_orders` is false. Do not apply live prices or last trade. |
-| `R-TRADE-NEWER` | Last trade: newer timestamp wins; if there is no timestamp pair and live is fresh, live wins. |
+| `R-TRADE-NEWER` | Last trade: both sides have timestamps; newer timestamp wins. |
+| `R-TRADE-LIVE-NOCLOCK` | Last trade: no timestamp pair, live is fresh. Live price wins. This is not a recency comparison. |
 | `R-AGG-WAREHOUSE` | `volume` and `liquidity` always warehouse. |
 | `R-LIFE-WAREHOUSE` | Matching identity keys, `closed`, and `accepting_orders` always warehouse. |
 
