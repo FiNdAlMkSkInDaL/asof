@@ -141,8 +141,8 @@
   "oneMonthPriceChange": -0.028,
   "oneYearPriceChange": -0.0155,
   "lastTradePrice": 0.17,
-  "bestBid": 0.15,
-  "bestAsk": 0.16,
+  "bestBid": 0.169,
+  "bestAsk": 0.17,
   "automaticallyActive": true,
   "clearBookOnStart": true,
   "seriesColor": "",
@@ -167,15 +167,15 @@
   },
   "version": "v1",
   "_asof_stub": {
-    "note": "Same identity as warehouse_open.json and live.json. Inherits lagged bestBid/bestAsk from warehouse_open. lastTradePrice is the captured 0.17, not stubbed. closed and acceptingOrders overlaid so cycle 2 can HOLD cycle-1 live prices. Not a different market and not a transplanted book.",
+    "note": "Same identity as warehouse_open.json and live.json. bestBid/bestAsk are the first capture's real catalogue BBO (0.169/0.17), not the open-row lag. lastTradePrice is the captured 0.17. closed and acceptingOrders overlaid so cycle 2 HOLDs cycle-1 live prices. Cycle 2's new fight is a later live book plus quoting vs not accepting, not a second 0.15/0.16 stub.",
     "keys": [
-      "bestBid",
-      "bestAsk",
       "closed",
       "acceptingOrders"
     ],
-    "inherited_from": "warehouse_open.json",
     "captured": {
+      "bestBid": 0.169,
+      "bestAsk": 0.17,
+      "lastTradePrice": 0.17,
       "closed": false,
       "acceptingOrders": true
     },

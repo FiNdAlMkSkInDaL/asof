@@ -27,16 +27,27 @@ def test_two_applies_one_token_hold(tmp_path: Path):
     assert any(d.rule_id == "R-BOOK-DEAD" for d in c2.decisions)
     assert c2.by_field("closed").winner is Winner.WAREHOUSE
     assert c2.by_field("closed").value is True
+    assert c2.by_field("closed").conflict is False
     assert c2.by_field("best_bid").winner is Winner.HOLD
     assert c2.by_field("best_bid").value == bid.value
-    live_args = [s.args.get("token_id") for s in steps if s.tool == "fetch_live"]
-    assert live_args == [src.primary_token(), src.primary_token()]
+    assert c2.by_field("best_bid").warehouse == 0.169
+    assert c2.by_field("best_bid").live == 0.161
+    acc = c2.by_field("accepting_orders")
+    assert acc.winner is Winner.WAREHOUSE
+    assert acc.value is False
+    assert acc.live is True
+    assert acc.conflict is True
     apply_lines = [s.message for s in steps if s.kind == "APPLY"]
     assert apply_lines
     assert "best_bid=LIVE/R-BOOK-LIVE conflict" in apply_lines[0]
     assert "last_trade_price=LIVE/R-TRADE-LIVE-NOCLOCK conflict" in apply_lines[0]
+    assert "best_bid=HOLD/R-BOOK-DEAD" in apply_lines[1]
+    assert "0.15" not in apply_lines[1]
+    assert "accepting_orders=WAREHOUSE/R-LIFE-WAREHOUSE conflict" in apply_lines[1]
     assert "liquidity" not in apply_lines[0]
     assert "mid=" not in apply_lines[0]
+    live_args = [s.args.get("token_id") for s in steps if s.tool == "fetch_live"]
+    assert live_args == [src.primary_token(), src.primary_token()]
     kinds = [s.kind for s in steps]
     assert kinds[0] == "PLAN"
     assert "TOOL" in kinds and "OBSERVE" in kinds and "APPLY" in kinds

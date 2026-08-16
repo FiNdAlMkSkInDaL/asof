@@ -170,9 +170,9 @@ def reconcile(
     )
     result.decisions.append(
         _decision(
-            "accepting_orders", None, warehouse.accepting_orders, Winner.WAREHOUSE,
+            "accepting_orders", live.quoting, warehouse.accepting_orders, Winner.WAREHOUSE,
             warehouse.accepting_orders, "R-LIFE-WAREHOUSE",
-            "Lifecycle is official. Warehouse acceptingOrders is the halt flag.",
+            "Warehouse acceptingOrders is official. Live quoting (the book still has a ladder) is the like-for-like side.",
             as_of,
         )
     )
@@ -189,7 +189,7 @@ def _comparable_fields(live: LiveBook, warehouse: WarehouseRow) -> list[tuple[st
         ("volume", None, warehouse.volume),
         ("liquidity", None, warehouse.liquidity),
         ("closed", None, warehouse.closed),
-        ("accepting_orders", None, warehouse.accepting_orders),
+        ("accepting_orders", live.quoting, warehouse.accepting_orders),
     ]
 
 

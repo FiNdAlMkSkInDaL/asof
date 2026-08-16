@@ -224,6 +224,25 @@ def test_closed_live_is_none():
     assert d.winner is Winner.WAREHOUSE
 
 
+def test_accepting_orders_quoting_matches_open():
+    r = reconcile(book(), warehouse(), NOW)
+    d = r.by_field("accepting_orders")
+    assert d.live is True
+    assert d.warehouse is True
+    assert d.conflict is False
+    assert d.winner is Winner.WAREHOUSE
+
+
+def test_accepting_orders_conflict_when_not_accepting():
+    r = reconcile(book(), warehouse(closed=True, accepting_orders=False), NOW)
+    d = r.by_field("accepting_orders")
+    assert d.live is True
+    assert d.warehouse is False
+    assert d.conflict is True
+    assert d.winner is Winner.WAREHOUSE
+    assert r.by_field("closed").conflict is False
+
+
 def test_mid_spread_not_counted_as_conflict():
     r = reconcile(book(), warehouse(), NOW)
     assert r.by_field("mid").winner is Winner.LIVE

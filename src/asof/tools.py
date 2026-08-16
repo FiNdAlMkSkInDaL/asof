@@ -164,6 +164,9 @@ class CassetteSource:
         self.now = now
         self.dir = directory
         self._live_raw = json.loads((directory / "live.json").read_text(encoding="utf-8"))
+        c2 = directory / "live_c2.json"
+        self._live_c2 = json.loads(c2.read_text(encoding="utf-8")) if c2.is_file() else None
+        self._live_fetches = 0
         self._snaps: dict[str, dict[str, Any]] = {
             "open": json.loads((directory / "warehouse_open.json").read_text(encoding="utf-8")),
             "closed": json.loads((directory / "warehouse_closed.json").read_text(encoding="utf-8")),
@@ -176,11 +179,15 @@ class CassetteSource:
         return frozenset({"open", "closed"})
 
     def fetch_live(self, token_id: str, *, captured_clock: bool = False) -> LiveBook | None:
-        if token_id != str(self._live_raw.get("asset_id")):
+        raw = self._live_raw
+        if self._live_fetches >= 1 and self._live_c2 is not None:
+            raw = self._live_c2
+        if token_id != str(raw.get("asset_id")):
             return None
+        self._live_fetches += 1
         if captured_clock:
-            return parse_book(self._live_raw)
-        return parse_book(self._live_raw, as_of=self.now - timedelta(seconds=0.4))
+            return parse_book(raw)
+        return parse_book(raw, as_of=self.now - timedelta(seconds=0.4))
 
     def fetch_warehouse(self, token_id: str, snapshot: str) -> WarehouseRow | None:
         if snapshot not in self._snaps:

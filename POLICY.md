@@ -20,7 +20,8 @@ Cassette replay rebases live `as_of` to `now - 0.4s` so the demo is not vacuousl
 | `mid`, `spread` | `LIVE` only when the book is fresh, two-sided, and uncrossed; else `HOLD` | `R-BOOK-LIVE` / `R-BOOK-ONE-SIDED` / `R-BOOK-STALE` / `R-BOOK-CROSSED` / `R-BOOK-DEAD` | Derived from the live book. Logged for context; disagreement is not counted as a conflict (they are functions of bid/ask). Warehouse mid, if both catalogue bid and ask exist, is context only — never invented from `outcomePrice`. |
 | `last_trade_price` | Newer timestamp wins. If the market is dead, `HOLD`. If there is no timestamp pair and live is not fresh, `HOLD`. If there is no timestamp pair and live is fresh, live wins. | `R-TRADE-NEWER` / `R-TRADE-LIVE-NOCLOCK` / `R-BOOK-DEAD` / `R-BOOK-STALE` | Compared to warehouse `lastTradePrice`. Recency is the meaning of the field when both sides have clocks. Cassette payloads have prices and no trade clocks; that branch is `R-TRADE-LIVE-NOCLOCK`, proven also in `tests/test_policy.py`. |
 | `volume`, `liquidity` | `WAREHOUSE` | `R-AGG-WAREHOUSE` | Aggregates are not top-of-book size. Top-of-book size may be logged as live. It is not a like-for-like disagreement with catalogue liquidity. |
-| `closed`, `accepting_orders` | `WAREHOUSE` | `R-LIFE-WAREHOUSE` | Lifecycle is official. Live is `None` unless the live payload actually carries those keys. A missing live side is not a two-source conflict. |
+| `closed` | `WAREHOUSE` | `R-LIFE-WAREHOUSE` | Lifecycle is official. Live CLOB `/book` does not carry `closed`. A missing live side is not a two-source conflict. |
+| `accepting_orders` | `WAREHOUSE` | `R-LIFE-WAREHOUSE` | Warehouse `acceptingOrders` is official. Live side is `quoting` (the book still has a ladder). Quoting `true` vs accepting `false` is a two-source fight; warehouse wins. |
 
 `HOLD` means the previous reconciled value for **this token**. An empty previous is an empty HOLD, not a guess.
 
@@ -37,7 +38,7 @@ Cassette replay rebases live `as_of` to `now - 0.4s` so the demo is not vacuousl
 | `R-TRADE-NEWER` | Last trade: both sides have timestamps; newer timestamp wins. |
 | `R-TRADE-LIVE-NOCLOCK` | Last trade: no timestamp pair, live is fresh. Live price wins. This is not a recency comparison. |
 | `R-AGG-WAREHOUSE` | `volume` and `liquidity` always warehouse. |
-| `R-LIFE-WAREHOUSE` | Matching identity keys, `closed`, and `accepting_orders` always warehouse. |
+| `R-LIFE-WAREHOUSE` | Matching identity keys and `closed` always warehouse (live `closed` is missing, not a fight). `accepting_orders` always warehouse; live side is `quoting`. |
 
 ## Three laws
 
@@ -50,6 +51,6 @@ Cassette replay rebases live `as_of` to `now - 0.4s` so the demo is not vacuousl
 Both warehouse snapshots are the same outcome token as `cassettes/live.json`.
 
 - `warehouse_open.json` is a captured Gamma row. `bestBid` / `bestAsk` are lagged (`_asof_stub`) because later wire BBO matched the book. Capture-time `lastTradePrice` was `0.17` against CLOB last trade `0.169`; that tick is kept, not stubbed. The rest of the row is unmodified capture.
-- `warehouse_closed.json` is that same identity with `closed: true` and `acceptingOrders: false`, listed in `_asof_stub`. Cycle 2 proof is HOLD of the previous live bid, not a new price fight. It is not a different market and not a transplanted book.
+- `warehouse_closed.json` is that same identity with `closed: true` and `acceptingOrders: false`, listed in `_asof_stub`. `bestBid`/`bestAsk` are the first capture's real catalogue BBO (`0.169`/`0.17`), not the open-row lag. Cycle 2 HOLDs cycle-1 live prices because the market is dead. A later live book (`live_c2.json`) is a second observation. The new Cycle 2 fight is quoting vs not accepting, not a second `0.15`/`0.16` stub.
 
 See `cassettes/README.md`.

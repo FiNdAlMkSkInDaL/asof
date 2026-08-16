@@ -62,8 +62,11 @@ def test_closed_snapshot_same_token():
     assert closed.closed is True
     assert closed.accepting_orders is False
     stub = json.loads((CASSETTES / "warehouse_closed.json").read_text(encoding="utf-8"))["_asof_stub"]
-    assert stub["keys"] == ["bestBid", "bestAsk", "closed", "acceptingOrders"]
+    assert stub["keys"] == ["closed", "acceptingOrders"]
     assert "lastTradePrice" not in stub.get("stubbed", {})
+    assert "bestBid" not in stub.get("stubbed", {})
+    assert closed.best_bid == 0.169
+    assert closed.best_ask == 0.17
     assert closed.last_trade_price == 0.17
 
 
@@ -82,6 +85,18 @@ def test_unknown_token_returns_none():
     src = CassetteSource(CASSETTES, NOW)
     assert src.fetch_live("missing") is None
     assert src.fetch_warehouse("missing", "open") is None
+
+
+def test_second_live_fetch_uses_live_c2():
+    src = CassetteSource(CASSETTES, NOW)
+    token = src.primary_token()
+    first = src.fetch_live(token)
+    second = src.fetch_live(token)
+    assert first is not None and second is not None
+    assert first.best_bid == 0.169
+    assert second.best_bid == 0.161
+    assert first.last_trade_price == 0.169
+    assert second.last_trade_price == 0.164
 
 
 def test_captured_clock_uses_json_timestamp():
