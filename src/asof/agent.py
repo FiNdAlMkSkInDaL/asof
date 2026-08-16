@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import textwrap
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -70,8 +71,8 @@ class Agent:
 
     def _do_fetch_live(self) -> None:
         token = self.obs.token_id
-        self._emit("PLAN", f"Fetch the live book for token {token}.")
-        self._emit("TOOL", f"fetch_live({token})", tool="fetch_live", args={"token_id": token})
+        self._emit("PLAN", f"Fetch the live book for token {_clip_id(token)}.")
+        self._emit("TOOL", f"fetch_live({_clip_id(token)})", tool="fetch_live", args={"token_id": token})
         live = self.source.fetch_live(token)
         if self.obs.applies >= 1:
             self.obs.live_refresh_done = True
@@ -89,10 +90,10 @@ class Agent:
 
     def _do_fetch_warehouse(self, snapshot: str) -> None:
         token = self.obs.token_id
-        self._emit("PLAN", f"Fetch warehouse snapshot {snapshot!r} for token {token}.")
+        self._emit("PLAN", f"Fetch warehouse snapshot {snapshot!r} for token {_clip_id(token)}.")
         self._emit(
             "TOOL",
-            f"fetch_warehouse({token}, {snapshot})",
+            f"fetch_warehouse({_clip_id(token)}, {snapshot})",
             tool="fetch_warehouse",
             args={"token_id": token, "snapshot": snapshot},
         )
@@ -116,11 +117,14 @@ class Agent:
         live = self.obs.live
         assert live is not None
         snap = self.obs.warehouse_snapshot or "open"
-        self._emit("PLAN", f"Warehouse miss. Retry snapshot {snap!r} pinned to live token {live.token_id}.")
+        self._emit(
+            "PLAN",
+            f"Warehouse miss. Retry snapshot {snap!r} pinned to live token {_clip_id(live.token_id)}.",
+        )
         self.obs.retried_pinned = True
         self._emit(
             "TOOL",
-            f"fetch_warehouse({live.token_id}, {snap})",
+            f"fetch_warehouse({_clip_id(live.token_id)}, {snap})",
             tool="fetch_warehouse",
             args={"token_id": live.token_id, "snapshot": snap},
         )
@@ -182,12 +186,22 @@ class Agent:
         )
 
 
+TRANSCRIPT_WIDTH = 92
+
+
 def _n(value: Any) -> str:
     if value is None:
         return "-"
     if isinstance(value, float):
         return f"{value:.4g}"
     return str(value)
+
+
+def _clip_id(value: Any) -> str:
+    text = _n(value)
+    if len(text) <= 14:
+        return text
+    return f"{text[:6]}..{text[-4:]}"
 
 
 def _observe(live: LiveBook, warehouse: WarehouseRow) -> str:
@@ -213,14 +227,41 @@ def render_transcript(steps: list[Step]) -> str:
     lines = ["asof -- planner fetches; policy writes", ""]
     for step in steps:
         prefix = f"C{step.cycle} {step.kind:<7}"
-        lines.append(f"{prefix} {step.message}")
-        for d in step.decisions:
-            flag = "  conflict" if d.conflict else ""
-            lines.append(
-                f"         {d.field:18} {d.winner.value:10} {d.rule_id:16} "
-                f"live={_n(d.live):>10}  wh={_n(d.warehouse):>10}  -> {_n(d.value)}{flag}"
+        body = f"{prefix} {step.message}"
+        if len(body) <= TRANSCRIPT_WIDTH:
+            lines.append(body)
+        else:
+            wrapped = textwrap.wrap(
+                body,
+                width=TRANSCRIPT_WIDTH,
+                subsequent_indent="         ",
             )
+            lines.extend(wrapped or [body])
+        for d in step.decisions:
+            if d.field in {"token_id", "condition_id", "mid", "spread", "volume", "liquidity"}:
+                continue
+            line = _decision_line(d)
+            if len(line) <= TRANSCRIPT_WIDTH:
+                lines.append(line)
+            else:
+                lines.extend(
+                    textwrap.wrap(line, width=TRANSCRIPT_WIDTH, subsequent_indent="         ")
+                    or [line]
+                )
     return "\n".join(lines) + "\n"
+
+
+def _decision_line(d: FieldDecision) -> str:
+    flag = " conflict" if d.conflict else ""
+    if d.field in {"token_id", "condition_id"}:
+        detail = "match" if _n(d.live) == _n(d.warehouse) else (
+            f"live={_clip_id(d.live)} wh={_clip_id(d.warehouse)}"
+        )
+        return f"         {d.field:<18} {d.winner.value:<10} {d.rule_id:<22} {detail}"
+    return (
+        f"         {d.field:<18} {d.winner.value:<10} {d.rule_id:<22} "
+        f"{_n(d.live)}/{_n(d.warehouse)}->{_n(d.value)}{flag}"
+    )
 
 
 def _decision_dict(d: FieldDecision) -> dict[str, Any]:

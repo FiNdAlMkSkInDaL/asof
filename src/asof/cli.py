@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import textwrap
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -108,12 +109,16 @@ def _demo(args: argparse.Namespace) -> int:
         write_cycles=write_cycles,
     )
     print(render_transcript(steps), end="")
-    print(f"wrote {args.artifacts / transcript}")
+    out = args.artifacts / transcript
+    try:
+        shown = out.relative_to(REPO)
+    except ValueError:
+        shown = out
+    print(f"wrote {shown}")
     if agent.results and not args.dead_cycle1:
-        token = agent.results[0].token_id
-        print(f"next: python -m asof explain {token}.best_bid")
+        print("next: python -m asof explain TOKEN.best_bid")
         if _closed_true(agent.results):
-            print(f"      python -m asof explain {token}.closed")
+            print("      python -m asof explain TOKEN.closed")
     store.close()
     return 0
 
@@ -138,7 +143,8 @@ def _query(args: argparse.Namespace) -> int:
     print(f"{'field':22} {'value':>12} {'winner':>10}  rule")
     for row in rows:
         value = json.loads(row["value"]) if row["value"] is not None else None
-        print(f"{row['field']:22} {_fmt(value):>12} {row['winner']:>10}  {row['rule_id']}")
+        shown = _clip_id(value) if row["field"] in {"token_id", "condition_id"} else _fmt(value)
+        print(f"{row['field']:22} {shown:>12} {row['winner']:>10}  {row['rule_id']}")
     store.close()
     return 0
 
@@ -156,14 +162,20 @@ def _explain(args: argparse.Namespace) -> int:
     value = json.loads(row["value"]) if row["value"] is not None else None
     live = json.loads(row["live"]) if row["live"] is not None else None
     warehouse = json.loads(row["warehouse"]) if row["warehouse"] is not None else None
-    print(f"{token}.{field}")
+    print(f"field {field}")
+    print(f"  token      {_clip_id(token)}")
     print(f"  value      {_fmt(value)}")
     print(f"  winner     {row['winner']}")
     print(f"  rule       {row['rule_id']}")
     print(f"  live       {_fmt(live)}")
     print(f"  warehouse  {_fmt(warehouse)}")
     print(f"  as_of      {row['as_of']}")
-    print(f"  {row['reason']}")
+    reason = row["reason"] or ""
+    if len(reason) <= 90:
+        print(f"  {reason}")
+    else:
+        for i, part in enumerate(textwrap.wrap(reason, width=90)):
+            print(f"  {part}" if i == 0 else f"    {part}")
     store.close()
     return 0
 
@@ -176,6 +188,13 @@ def _fmt(value: object) -> str:
     if isinstance(value, float):
         return f"{value:.4g}"
     return str(value)
+
+
+def _clip_id(value: object) -> str:
+    text = _fmt(value) if not isinstance(value, str) else value
+    if len(text) <= 14:
+        return text
+    return f"{text[:6]}..{text[-4:]}"
 
 
 if __name__ == "__main__":
